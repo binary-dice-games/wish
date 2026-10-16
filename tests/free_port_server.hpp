@@ -32,7 +32,7 @@ struct free_port_server {
 /**
  * @brief Like `start_on_free_port()`, but calls @p configure on each freshly
  *        constructed server before `start()` -- for setters that must run
- *        before start (e.g. `set_store_dir()`).
+ *        before start (e.g. `set_home()`).
  *
  * @param configure Callable taking `bdg::wish::server&`.
  */

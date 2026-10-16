@@ -87,6 +87,11 @@ public final class Client implements AutoCloseable {
    * <p>{@code params} is forwarded to both the transport's connection setup
    * and the server's connect handshake payload, e.g. fields a server-side
    * auth module inspects (see {@code src/auth/DESIGN.md}).
+   *
+   * <p>Without a {@code "username"} (or {@code "anonymous": true}) field the
+   * session connects as the OS user, which on Android is the app's uid name
+   * (e.g. {@code u0_a123}), not the person using it: pass the app's own
+   * user name, or {@code "anonymous": true}. See {@code docs/wish-home.md}.
    */
   public void run(SessionCallback sessionFn, Dynamic params) {
     int rc = nativeRunWithParams(handle, this, sessionFn, params == null ? 0 : params.handle());
@@ -253,7 +258,7 @@ public final class Client implements AutoCloseable {
   // ─── User store ───────────────────────────────────────────────────────────
   //
   // A persistent store of named objects private to this session's identity
-  // (connect with a "username" param); see docs/persistent-store.md. Every
+  // (connect with a "username" param, see run()); see docs/persistent-store.md. Every
   // method below except hasUserStore() throws WishException (code
   // WISH_ERR_UNAVAILABLE = -6) for an anonymous session.
 

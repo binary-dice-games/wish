@@ -243,6 +243,8 @@ TEST(NotificationService, ClientsPostOverRmi) {
     dynamic params;
     if (!username.empty())
       params["username"_key] = username;
+    else
+      params["anonymous"_key] = true; // run() would otherwise send the OS user
     c.run(params);
   };
 
@@ -372,11 +374,11 @@ TEST(ServerOverlayDetail, ReadLogTailKeepsTheLastLines) {
 
 TEST(ServerOverlayDetail, ListStoreIdentitiesMergesFilesAndConnectedSessions) {
   temp_dir dir;
-  std::filesystem::create_directories(dir.path / "users");
-  std::ofstream(dir.path / "users" / "alice.bison") << "";
-  std::ofstream(dir.path / "users" / "bob.bison") << "";
+  std::filesystem::create_directories(dir.path / "users" / "alice");
+  std::filesystem::create_directories(dir.path / "users" / "bob");
+  std::filesystem::create_directories(dir.path / "users" / "Not Normalized");
   std::ofstream(dir.path / "users" / "notes.txt") << "";
-  auto ids = wish::detail::list_store_identities(dir.path, {"carol", "", "../evil", "alice"});
+  auto ids = wish::detail::list_store_identities(wish::wish_home{dir.path}, {"Carol", "", "../evil", "alice"});
   EXPECT_EQ(ids, (std::vector<std::string>{"alice", "bob", "carol"}));
 }
 
@@ -460,7 +462,7 @@ class ServerOverlayTest : public ::testing::Test {
     renderer_ = std::make_unique<wish::imgui_renderer>();
     session_ = std::make_shared<wish::sync_context>(std::make_unique<wish::context>(rmi::shared::generate_id()));
 
-    stores_ = std::make_shared<wish::store_registry>(dir_.path / "store");
+    stores_ = std::make_shared<wish::store_registry>(wish::wish_home{dir_.path / "store"});
     log_file_ = dir_.path / "server.log";
     std::ofstream(log_file_) << "[info] server started\n[error] something failed\n";
     notifications_ = std::make_shared<wish::notification_center>();

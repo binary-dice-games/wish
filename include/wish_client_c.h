@@ -220,6 +220,11 @@ WISH_API wish_error wish_client_run(wish_client_handle client, wish_session_fn s
  * wish_client_run() is a thin wrapper around this function with an empty
  * @p connect_params.
  *
+ * Without a "username" field (and without "anonymous" set to true), the
+ * session connects as the logged-in OS user. Pass "anonymous": true for a
+ * session with no identity: no user store, and a temporary sandbox deleted
+ * on disconnect.
+ *
  * @param client         Client handle from wish_client_tcp_create() (or
  *                       another wish_client_*_create() constructor).
  * @param session_fn     Session callback (must not be NULL).
@@ -737,9 +742,10 @@ WISH_API wish_error wish_wait_resource_syncs(wish_client_handle client);
 /*
  * A persistent store of named bison objects private to the session's
  * authenticated identity, kept by the server across sessions and restarts
- * (see docs/persistent-store.md). Only identified sessions have one: connect
- * with a "username" field in wish_client_run_with_params()'s connect params
- * (or whatever identity the server's auth module expects). Anonymous
+ * (see docs/persistent-store.md). Only identified sessions have one: by
+ * default a session connects as the logged-in OS user, or pass a "username"
+ * field in wish_client_run_with_params()'s connect params (or whatever
+ * identity the server's auth module expects). Anonymous
  * sessions get WISH_ERR_UNAVAILABLE from every call below. Entry names are
  * 1-256 printable ASCII characters; prefix them with your tool's qualified
  * name (e.g. "bdg.desktop.tail") to avoid clashes.

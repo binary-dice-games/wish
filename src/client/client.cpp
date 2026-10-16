@@ -5,6 +5,7 @@
 #include <client/notification_rpc.hpp>
 #include <client/style_rpc.hpp>
 #include <client/user_store_rpc.hpp>
+#include <context/os_user.hpp>
 
 #include <ui/ui_descriptor.hpp>
 
@@ -22,7 +23,17 @@ using namespace bison;
 
 // ── client ────────────────────────────────────────────────────────────────────
 
+void client::apply_default_identity(bison::dynamic& params) {
+  if (params.findField("username"_key))
+    return;
+  if (const auto* f = params.findField("anonymous"_key); f && f->is<bool>() && f->as<bool>())
+    return;
+  if (auto user = os_user_name(); !user.empty())
+    params["username"_key] = std::move(user);
+}
+
 void client::run(bison::dynamic connect_params) {
+  apply_default_identity(connect_params);
   connect(std::move(connect_params));
   try {
     on_session();

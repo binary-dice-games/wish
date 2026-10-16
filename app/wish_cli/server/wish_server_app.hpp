@@ -17,8 +17,9 @@ class server;
 
 /**
  * @brief A `wish::server` configured from the `wish server` flags
- *        (`--renderer`, `--theme`, `--lang`, `--store_dir`, `--sandbox_root`,
- *        `--settings_admins`, `--profiling_dir`, ...) and started on a
+ *        (`--renderer`, `--theme`, `--lang`, `--wish_home`,
+ *        `--persistent_sandboxes`, `--settings_admins`, `--profiling`, ...)
+ *        and started on a
  *        transport. The server is stopped on destruction.
  *
  * Shared by `wish server` and by `wish desktop --with_server`, which runs

@@ -81,7 +81,7 @@ class ConfigFlagsTest : public ::testing::Test {
   }
 
   std::filesystem::path store_file() const {
-    return dir_ / "server_store.bison";
+    return dir_ / "server" / "store.bison";
   }
 
   /// Runs the CLI startup sequence: env defaults, then the command line.
@@ -297,7 +297,7 @@ TEST_F(ConfigFlagsTest, ThemeChoicesAreTheRegisteredThemes) {
   for (const char* name : {"wish", "light", "dark", "classic"})
     wish::add_theme_info({name, {}, false});
   wish::add_theme_info({"test_solarized", "Solarized", false});
-  wish::persistent_store store(dir_ / "server_store.bison");
+  wish::persistent_store store(dir_ / "server" / "store.bison");
   wish::describe_config_flags(store, "wish.cli.server", {}, "wish server");
   auto catalog = wish::settings::collect(store);
   const auto theme = std::find_if(catalog.settings.begin(), catalog.settings.end(), [](const auto& s) {
@@ -312,7 +312,7 @@ TEST_F(ConfigFlagsTest, ThemeChoicesAreTheRegisteredThemes) {
 }
 
 TEST_F(ConfigFlagsTest, DescribeConfigFlagsRecordsTheKnownFlags) {
-  wish::persistent_store store(dir_ / "server_store.bison");
+  wish::persistent_store store(dir_ / "server" / "store.bison");
   wish::describe_config_flags(store, "wish.cli.server", {"font_size"}, "wish server");
   auto catalog = wish::settings::collect(store);
   std::vector<std::string> names;

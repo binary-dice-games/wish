@@ -196,23 +196,24 @@ void persistent_store::save(const entry_map& entries) const {
 
 // ── store_registry ───────────────────────────────────────────────────────────
 
-store_registry::store_registry(std::filesystem::path dir) : dir_(std::move(dir)) {}
+store_registry::store_registry(wish_home home) : home_(std::move(home)) {}
 
 persistent_store_ptr store_registry::server_store() {
   auto store = server_store_.wlock();
   if (!*store)
-    *store = std::make_shared<persistent_store>(dir_ / "server_store.bison");
+    *store = std::make_shared<persistent_store>(home_.server_store_file());
   return *store;
 }
 
 persistent_store_ptr store_registry::user_store(const std::string& identity) {
-  if (!is_safe_sandbox_identity(identity))
+  const std::string id = normalize_identity(identity);
+  if (id.empty())
     return nullptr;
   auto stores = user_stores_.wlock();
-  auto& slot = (*stores)[identity];
+  auto& slot = (*stores)[id];
   if (auto existing = slot.lock())
     return existing;
-  auto store = std::make_shared<persistent_store>(dir_ / "users" / (identity + ".bison"));
+  auto store = std::make_shared<persistent_store>(home_.user_store_file(id));
   slot = store;
   return store;
 }

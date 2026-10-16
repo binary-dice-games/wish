@@ -11,7 +11,8 @@
 #include "src/client/desktop_endpoint.hpp"
 #include "src/client/style_rpc.hpp"
 #include "src/client/user_store_rpc.hpp"
-#include "src/context/store_dir.hpp"
+#include "src/context/os_user.hpp"
+#include "src/context/wish_home.hpp"
 #include "src/rmi/shared/constants.hpp"
 #include "src/term/terminal.hpp"
 #include "src/ui/ui_descriptor.hpp"
@@ -35,6 +36,13 @@ DECLARE_bool(debugger);
 // Shared with wish client's --timeout: both express "per-request timeout to
 // the remote peer" (there, the wish server; here, the upstream server).
 DECLARE_int32(timeout);
+
+// Defined in config_flags.cpp for wish-cli; wish-desktop has no server flags.
+#ifdef WISH_CLI_BUILD
+DECLARE_string(wish_home);
+#else
+DEFINE_string(wish_home, "", "Root of the files wish keeps for its users (see src/context/DESIGN.md); empty: ~/.wish");
+#endif
 
 // ── Downstream (server side) flags ─────────────────────────────────────────────
 DEFINE_string(downstream_transport, "tcp", "Downstream transport to use: tcp, pipe, tls, or term");
@@ -82,7 +90,7 @@ DEFINE_string(
     config,
     "",
     "Desktop configuration file (YAML or JSON): the Start menu and other desktop settings; "
-    "created with the defaults if missing (default: ~/.wish/desktop/desktop.yaml)");
+    "created with the defaults if missing (default: <wish_home>/users/<user>/desktop/desktop.yaml)");
 DEFINE_bool(
     with_server,
     false,
@@ -122,12 +130,11 @@ constexpr const char* kSettingsEntry = "wish.desktop";
 // private app directory, see src/auth/DESIGN.md).
 constexpr const char* kWallpaperDir = "private/apps/wish.desktop";
 
-std::string os_user_name() {
-  for (const char* var : {"USER", "USERNAME", "LOGNAME"}) {
-    if (const char* v = std::getenv(var); v && *v)
-      return v;
-  }
-  return {};
+/// The default config file: in @p user's profile, or -- for a name that
+/// can't be a profile (see normalize_identity()) -- directly in the home.
+std::filesystem::path desktop_config_path(const wish_home& home, const std::string& user) {
+  auto file = home.user_desktop_config(user);
+  return file.empty() ? home.root() / "desktop.yaml" : file;
 }
 
 /// A wildcard bind address isn't connectable; children dial loopback.
@@ -1139,13 +1146,14 @@ std::unique_ptr<bison::rmi::bridge> wish_desktop_app::make_bridge(
         {"WISH_PORT", std::to_string(FLAGS_downstream_port)},
         {"WISH_NAME", FLAGS_downstream_name},
     });
-    br->set_log_dir(std::filesystem::path("wish_logs") / "desktop");
+    br->set_log_dir(wish_home{FLAGS_wish_home}.logs_dir() / "desktop");
   }
   if (!FLAGS_wallpaper.empty())
     br->set_wallpaper(FLAGS_wallpaper);
-  br->set_config_file(
-      FLAGS_config.empty() ? default_store_dir() / "desktop" / "desktop.yaml" : std::filesystem::path(FLAGS_config));
-  br->set_user(FLAGS_upstream_username.empty() ? os_user_name() : FLAGS_upstream_username);
+  const std::string user = FLAGS_upstream_username.empty() ? os_user_name() : FLAGS_upstream_username;
+  br->set_config_file(FLAGS_config.empty() ? desktop_config_path(wish_home{FLAGS_wish_home}, user)
+                                           : std::filesystem::path(FLAGS_config));
+  br->set_user(user);
 
   desktop_ = br.get();
   return br;

@@ -66,21 +66,14 @@ std::vector<std::string> read_log_tail(const std::filesystem::path& path, size_t
   return lines;
 }
 
-std::vector<std::string> list_store_identities(const std::filesystem::path& store_dir,
-                                               const std::vector<std::string>& connected) {
+std::vector<std::string> list_store_identities(const wish_home& home, const std::vector<std::string>& connected) {
   std::set<std::string> ids;
   for (const auto& id : connected) {
-    if (is_safe_sandbox_identity(id))
-      ids.insert(id);
+    if (auto normalized = normalize_identity(id); !normalized.empty())
+      ids.insert(std::move(normalized));
   }
-  std::error_code ec;
-  for (std::filesystem::directory_iterator it(store_dir / "users", ec), end; !ec && it != end; it.increment(ec)) {
-    if (it->path().extension() != ".bison")
-      continue;
-    std::string id = it->path().stem().string();
-    if (is_safe_sandbox_identity(id))
-      ids.insert(std::move(id));
-  }
+  for (auto& id : home.list_identities())
+    ids.insert(std::move(id));
   return {ids.begin(), ids.end()};
 }
 
@@ -1045,19 +1038,19 @@ void server_overlay::draw_bottom_bar(const std::vector<overlay_client_info>& cli
     ImGui::SameLine();
   }
 
-  // Sandbox: the persistent root, else pick a client's temporary sandbox.
-  if (!info_.sandbox_root.empty()) {
-    if (ImGui::Button("Open sandbox folder"))
-      open_target(info_.sandbox_root.string(), "the sandbox folder");
-    ImGui::SetItemTooltip("%s", info_.sandbox_root.string().c_str());
-  } else {
+  // Sandbox: pick a connected client's sandbox.
+  {
     ImGui::BeginDisabled(clients.empty());
     if (ImGui::Button("Open sandbox folder"))
       ImGui::OpenPopup("##sandbox_pick");
     ImGui::EndDisabled();
-    ImGui::SetItemTooltip(clients.empty() ? "No client connected; each client gets a temporary sandbox "
-                                            "(start the server with --sandbox_root to keep them)"
-                                          : "Each client has its own temporary sandbox");
+    const char* tip = "Each client has its own temporary sandbox";
+    if (clients.empty())
+      tip = "No client connected";
+    else if (info_.persistent_sandboxes)
+      tip = "Identified clients keep their sandbox in users/<identity>/sandbox under the wish home; "
+            "anonymous ones get a temporary one";
+    ImGui::SetItemTooltip("%s", tip);
     if (ImGui::BeginPopup("##sandbox_pick")) {
       for (const auto& c : clients) {
         const std::string label = (c.identity.empty() ? std::string{"anonymous"} : c.identity) + "  (" +
@@ -1187,9 +1180,10 @@ void server_overlay::draw_overview(const std::vector<overlay_client_info>& clien
       kv("Renderer", info_.renderer);
       kv("Overlay hotkey", info_.hotkey.empty() ? std::string{"(disabled)"} : info_.hotkey);
       kv("Log file", info_.log_file.string());
-      kv("Store directory", info_.stores ? info_.stores->dir().string() : std::string{});
+      kv("Wish home", info_.stores ? info_.stores->home().root().string() : std::string{});
       kv("Sandboxes",
-         info_.sandbox_root.empty() ? std::string{"temporary, one per client"} : info_.sandbox_root.string());
+         info_.persistent_sandboxes ? std::string{"kept in users/<identity>/sandbox (anonymous: temporary)"}
+                                    : std::string{"temporary, one per client"});
       std::string admins;
       for (const auto& a : info_.settings_admins)
         admins += (admins.empty() ? "" : ", ") + a;
@@ -1498,7 +1492,7 @@ void server_overlay::refresh_settings(const std::vector<overlay_client_info>& cl
   std::vector<std::string> connected;
   for (const auto& c : clients)
     connected.push_back(c.identity);
-  known_identities_ = detail::list_store_identities(info_.stores->dir(), connected);
+  known_identities_ = detail::list_store_identities(info_.stores->home(), connected);
 
   auto scope = std::make_unique<settings_scope>();
   scope->identity = settings_identity_;

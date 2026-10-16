@@ -121,7 +121,7 @@ class WishDesktopTest : public ::testing::Test {
 
   void SetUp() override {
     ASSERT_TRUE(kAppsRegistered);
-    upstream_srv_.set_store_dir(store_dir_);
+    upstream_srv_.set_home(store_dir_);
     upstream_srv_.start(std::make_shared<wish::local_auth_module>());
     desktop_.set_launcher(&launcher_);
     desktop_.set_client_command({"wish", "client"});
@@ -866,7 +866,7 @@ class WishDesktopEndpointTest : public ::testing::Test {
     auto endpoint = wish::claim_desktop_endpoint(endpoint_name_);
     ASSERT_NE(endpoint, nullptr);
     downstream_.add(std::move(endpoint));
-    upstream_srv_.set_store_dir(store_dir_);
+    upstream_srv_.set_home(store_dir_);
     upstream_srv_.start(std::make_shared<wish::local_auth_module>());
     desktop_.set_launcher(&launcher_);
     desktop_.set_client_command({"wish", "client"});
@@ -918,7 +918,7 @@ class test_in_process_server : public wish::in_process_server {
       std::atomic<int>& sessions,
       const std::atomic<bool>& quit)
       : srv_(transport, std::make_unique<wish::null_renderer>(), sessions), quit_(quit) {
-    srv_.set_store_dir(store_dir);
+    srv_.set_home(store_dir);
     srv_.start(std::make_shared<wish::local_auth_module>());
   }
 

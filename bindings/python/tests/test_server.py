@@ -25,6 +25,9 @@ import time
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.dirname(__file__))
+
+import _wish_home  # noqa: E402,F401  (before any server starts)
 
 from wish import Client, Server, WishError
 
@@ -156,7 +159,7 @@ class TestUserStore(unittest.TestCase):
         self.store_dir = tempfile.mkdtemp(prefix="wish_py_store_")
         self.port = _free_port()
         self.server = Server.tcp("127.0.0.1", self.port)
-        self.server.start(renderer="console", store_dir=self.store_dir)
+        self.server.start(renderer="console", wish_home=self.store_dir)
         time.sleep(0.1)
 
     def tearDown(self):
@@ -177,7 +180,8 @@ class TestUserStore(unittest.TestCase):
                 done.set()
 
         client = Client.tcp("127.0.0.1", self.port)
-        params = {"username": username} if username else None
+        # No username: explicitly anonymous (otherwise the OS user).
+        params = {"username": username} if username else {"anonymous": True}
         t = threading.Thread(target=lambda: client.run(wrapped, params=params), daemon=True)
         t.start()
         self.assertTrue(done.wait(timeout=10))

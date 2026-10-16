@@ -366,7 +366,7 @@ size out of every client.
 
 ### Persistent stores (`persistent_store`, `__WishUserStore`)
 
-`bdg::wish::persistent_store` is a thread-safe, file-backed map of entry name → `bison::dynamic`. Every mutation rewrites the file atomically. A `store_registry` (one per `wish::server`/`wish::standalone`, rooted at `set_store_dir()`, default `~/.wish`) owns the **server store** (`server_store.bison`) and one **user store** per authenticated identity (`users/<identity>.bison`). It hands out shared instances, so concurrent sessions of one identity never overwrite each other's in-memory copy.
+`bdg::wish::persistent_store` is a thread-safe, file-backed map of entry name → `bison::dynamic`. Every mutation rewrites the file atomically. A `store_registry` (one per `wish::server`/`wish::standalone`, built on the `wish_home` set by `set_home()`, default `~/.wish`; see [src/context/DESIGN.md](src/context/DESIGN.md)) owns the **server store** (`server/store.bison`) and one **user store** per authenticated identity (`users/<identity>/store.bison`). It hands out shared instances, so concurrent sessions of one identity never overwrite each other's in-memory copy.
 
 `server::on_session_created` gives every session `server_store`. `server::on_authenticated` gives an identified session its `user_store` plus a `user_store_service`, registered as `"__WishUserStore"` in the `"wish"` namespace, with methods `get`/`set`/`erase`/`keys`. Anonymous sessions get neither, and `find_singleton_service` throws for `__WishUserStore`, so `client::has_user_store()` reports `false`.
 

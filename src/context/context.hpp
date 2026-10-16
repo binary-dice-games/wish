@@ -3,6 +3,7 @@
 /// @brief Per-client state container for an active wish session.
 #pragma once
 
+#include <context/wish_home.hpp>
 #include <i18n/translations.hpp>
 #include <ui/ui_importer.hpp>
 
@@ -27,11 +28,10 @@
 
 namespace bdg::wish {
 
-/// @brief True if @p identity is usable as a single directory name under a
-/// persistent sandbox root: non-empty, with no '/', '\\' or "..".
+/// @brief True if @p identity normalizes to a valid identity (see
+/// `normalize_identity()`), i.e. it can name a profile directory.
 inline bool is_safe_sandbox_identity(const std::string& identity) {
-  return !identity.empty() && identity.find('/') == std::string::npos && identity.find('\\') == std::string::npos &&
-      identity.find("..") == std::string::npos;
+  return !normalize_identity(identity).empty();
 }
 
 class ui_root; // defined in <wish/ui_root.hpp>
@@ -215,7 +215,8 @@ struct context : public bison::rmi::context {
   /// `user_store` is.
   user_store_service_ptr user_store_service;
 
-  /// The session's authenticated identity; empty for anonymous sessions.
+  /// The session's authenticated identity, normalized (see
+  /// `normalize_identity()`); empty for anonymous sessions.
   std::string identity;
 
   /// Whether this session may change server-store settings through

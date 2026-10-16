@@ -4,7 +4,7 @@
 ///        registry that owns the server store and the per-user stores.
 #pragma once
 
-#include <context/store_dir.hpp>
+#include <context/wish_home.hpp>
 #include "src/bison/bison_object.hpp"
 #include "src/bison/bison_sync.hpp"
 
@@ -120,23 +120,23 @@ class persistent_store {
 /**
  * @brief Owns the persistent stores of one wish server (or standalone host).
  *
- * Layout under the store directory:
- * - `server_store.bison` -- the server store, shared by every session.
- * - `users/<identity>.bison` -- one user store per authenticated identity.
+ * Store files follow the `wish_home` layout: the server store at
+ * `server_store_file()`, one user store per identity at
+ * `user_store_file(identity)`.
  *
  * Stores are opened lazily, so a server that never touches a store never
- * creates any file. User stores are cached by identity as weak references:
- * concurrent sessions of the same identity share one `persistent_store`,
- * and it is released once the last of them disconnects.
+ * creates any file. User stores are cached by normalized identity as weak
+ * references: concurrent sessions of the same identity share one
+ * `persistent_store`, and it is released once the last of them disconnects.
  */
 class store_registry {
  public:
-  /// @param dir  Directory holding the store files (see class comment).
-  explicit store_registry(std::filesystem::path dir);
+  /// @param home  Where the store files live (see class comment).
+  explicit store_registry(wish_home home);
 
-  /// @brief Directory holding the store files.
-  const std::filesystem::path& dir() const noexcept {
-    return dir_;
+  /// @brief Where the store files live.
+  const wish_home& home() const noexcept {
+    return home_;
   }
 
   /// @brief The server store, opened on first use.
@@ -144,14 +144,14 @@ class store_registry {
 
   /**
    * @brief The user store for @p identity, opened on first use.
-   * @return The store, or null if @p identity is empty or not a single safe
-   *         path segment (see `is_safe_sandbox_identity()`) -- such a
-   *         session is anonymous and has no user store.
+   * @return The store, or null if @p identity does not normalize to a valid
+   *         identity (see `normalize_identity()`) -- such a session is
+   *         anonymous and has no user store.
    */
   persistent_store_ptr user_store(const std::string& identity);
 
  private:
-  std::filesystem::path dir_;
+  wish_home home_;
   bison::synchronized<persistent_store_ptr> server_store_;
   bison::synchronized<std::unordered_map<std::string, std::weak_ptr<persistent_store>>> user_stores_;
 };

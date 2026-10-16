@@ -428,7 +428,7 @@ The internal `ui_element` tree of every window is private.
 
   The old file is not migrated.
 
-  Trade-off: an anonymous session (no `--username`) has no user store, so
+  Trade-off: an anonymous session (`--anonymous`) has no user store, so
   the lists then live in memory only. `load_store()` says so with one
   Console row ("user store", red) instead of failing. A store read or
   write error is likewise reported as a Console row and never thrown,

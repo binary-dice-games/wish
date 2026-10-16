@@ -47,10 +47,14 @@ class store_test_client : public wish::client {
   }
 };
 
+// Empty @p username: an explicitly anonymous session (without "anonymous",
+// wish::client::run() would connect as the OS user).
 dynamic params_with_username(const std::string& username) {
   dynamic p;
   if (!username.empty())
     p["username"_key] = username;
+  else
+    p["anonymous"_key] = true;
   return p;
 }
 
@@ -109,7 +113,7 @@ class UserStoreTest : public ::testing::Test {
 TEST_F(UserStoreTest, IdentifiedClientCanSetGetEraseAndListEntries) {
   memory_server_transport transport;
   wish::server srv{transport, std::make_unique<wish::null_renderer>()};
-  srv.set_store_dir(dir_);
+  srv.set_home(dir_);
   srv.start(std::make_shared<wish::local_auth_module>());
 
   bool has_store = false;
@@ -137,13 +141,13 @@ TEST_F(UserStoreTest, IdentifiedClientCanSetGetEraseAndListEntries) {
   EXPECT_EQ(keys, (std::vector<std::string>{"bdg.desktop.tail", "other"}));
   EXPECT_TRUE(erased);
   EXPECT_FALSE(erased_again);
-  EXPECT_TRUE(std::filesystem::exists(dir_ / "users" / "alice.bison"));
+  EXPECT_TRUE(std::filesystem::exists(dir_ / "users" / "alice" / "store.bison"));
 }
 
 TEST_F(UserStoreTest, InvalidEntryNameIsReportedToTheClient) {
   memory_server_transport transport;
   wish::server srv{transport, std::make_unique<wish::null_renderer>()};
-  srv.set_store_dir(dir_);
+  srv.set_home(dir_);
   srv.start(std::make_shared<wish::local_auth_module>());
 
   bool threw = false;
@@ -164,7 +168,7 @@ TEST_F(UserStoreTest, EntriesPersistAcrossSessionsAndServerRestarts) {
   {
     memory_server_transport transport;
     wish::server srv{transport, std::make_unique<wish::null_renderer>()};
-    srv.set_store_dir(dir_);
+    srv.set_home(dir_);
     srv.start(std::make_shared<wish::local_auth_module>());
     run_as(transport, "alice", [](store_test_client& c) { c.user_store_set("k", make_value("v1")).get(); });
     std::optional<dynamic> next_session;
@@ -175,7 +179,7 @@ TEST_F(UserStoreTest, EntriesPersistAcrossSessionsAndServerRestarts) {
   }
   memory_server_transport transport;
   wish::server srv{transport, std::make_unique<wish::null_renderer>()};
-  srv.set_store_dir(dir_);
+  srv.set_home(dir_);
   srv.start(std::make_shared<wish::local_auth_module>());
   std::optional<dynamic> after_restart;
   run_as(transport, "alice", [&](store_test_client& c) { after_restart = c.user_store_get("k").get(); });
@@ -187,7 +191,7 @@ TEST_F(UserStoreTest, EntriesPersistAcrossSessionsAndServerRestarts) {
 TEST_F(UserStoreTest, OtherIdentityCannotSeeEntries) {
   memory_server_transport transport;
   wish::server srv{transport, std::make_unique<wish::null_renderer>()};
-  srv.set_store_dir(dir_);
+  srv.set_home(dir_);
   srv.start(std::make_shared<wish::local_auth_module>());
 
   run_as(transport, "alice", [](store_test_client& c) { c.user_store_set("secret", make_value("alice")).get(); });
@@ -206,7 +210,7 @@ TEST_F(UserStoreTest, OtherIdentityCannotSeeEntries) {
 TEST_F(UserStoreTest, ConcurrentSessionsOfOneIdentityShareTheStore) {
   memory_server_transport transport;
   wish::server srv{transport, std::make_unique<wish::null_renderer>()};
-  srv.set_store_dir(dir_);
+  srv.set_home(dir_);
   srv.start(std::make_shared<wish::local_auth_module>());
 
   std::vector<std::string> keys;
@@ -226,7 +230,7 @@ TEST_F(UserStoreTest, ConcurrentSessionsOfOneIdentityShareTheStore) {
 TEST_F(UserStoreTest, AnonymousSessionHasNoUserStore) {
   memory_server_transport transport;
   wish::server srv{transport, std::make_unique<wish::null_renderer>()};
-  srv.set_store_dir(dir_);
+  srv.set_home(dir_);
   srv.start(std::make_shared<wish::local_auth_module>());
 
   bool has_store = true;
@@ -249,7 +253,7 @@ TEST_F(UserStoreTest, AnonymousSessionHasNoUserStore) {
 TEST_F(UserStoreTest, NoAuthModuleMeansNoUserStore) {
   memory_server_transport transport;
   wish::server srv{transport, std::make_unique<wish::null_renderer>()};
-  srv.set_store_dir(dir_);
+  srv.set_home(dir_);
   srv.start(); // no auth module: every session is anonymous
 
   bool has_store = true;
@@ -261,7 +265,7 @@ TEST_F(UserStoreTest, NoAuthModuleMeansNoUserStore) {
 TEST_F(UserStoreTest, UnsafeIdentityGetsNoUserStore) {
   memory_server_transport transport;
   wish::server srv{transport, std::make_unique<wish::null_renderer>()};
-  srv.set_store_dir(dir_);
+  srv.set_home(dir_);
   srv.start(std::make_shared<wish::local_auth_module>());
 
   bool has_store = true;
@@ -275,7 +279,7 @@ TEST_F(UserStoreTest, UnsafeIdentityGetsNoUserStore) {
 TEST_F(UserStoreTest, ServerStoreIsServerSideOnly) {
   memory_server_transport transport;
   recording_server srv{transport, std::make_unique<wish::null_renderer>()};
-  srv.set_store_dir(dir_);
+  srv.set_home(dir_);
   srv.start(std::make_shared<wish::local_auth_module>());
   srv.server_store().set("server.secret", make_value("server-only"));
 
@@ -296,9 +300,9 @@ TEST_F(UserStoreTest, ServerStoreIsServerSideOnly) {
   EXPECT_TRUE(instantiate_threw);
   EXPECT_TRUE(srv.saw_server_store);
   EXPECT_TRUE(srv.saw_user_store);
-  EXPECT_TRUE(std::filesystem::exists(dir_ / "server_store.bison"));
+  EXPECT_TRUE(std::filesystem::exists(dir_ / "server" / "store.bison"));
 
-  wish::persistent_store reopened{dir_ / "server_store.bison"};
+  wish::persistent_store reopened{dir_ / "server" / "store.bison"};
   EXPECT_TRUE(reopened.contains("server.secret"));
 }
 
@@ -307,7 +311,7 @@ TEST_F(UserStoreTest, ServerStoreIsServerSideOnly) {
 TEST_F(UserStoreTest, StandaloneWithIdentityHasPersistentUserStore) {
   {
     wish::standalone sa{std::make_unique<wish::null_renderer>()};
-    sa.set_store_dir(dir_);
+    sa.set_home(dir_);
     sa.set_user_identity("carol");
     sa.start();
     ASSERT_TRUE(sa.has_user_store());
@@ -315,7 +319,7 @@ TEST_F(UserStoreTest, StandaloneWithIdentityHasPersistentUserStore) {
     sa.stop();
   }
   wish::standalone sa{std::make_unique<wish::null_renderer>()};
-  sa.set_store_dir(dir_);
+  sa.set_home(dir_);
   sa.set_user_identity("carol");
   sa.start();
   auto value = sa.user_store_get("k").get();
@@ -324,12 +328,12 @@ TEST_F(UserStoreTest, StandaloneWithIdentityHasPersistentUserStore) {
   ASSERT_TRUE(value.has_value());
   EXPECT_EQ(value->as<std::string>("text"_key), "standalone");
   EXPECT_EQ(keys, (std::vector<std::string>{"k"}));
-  EXPECT_TRUE(std::filesystem::exists(dir_ / "users" / "carol.bison"));
+  EXPECT_TRUE(std::filesystem::exists(dir_ / "users" / "carol" / "store.bison"));
 }
 
 TEST_F(UserStoreTest, StandaloneWithoutIdentityIsAnonymous) {
   wish::standalone sa{std::make_unique<wish::null_renderer>()};
-  sa.set_store_dir(dir_);
+  sa.set_home(dir_);
   sa.start();
   EXPECT_FALSE(sa.has_user_store());
   EXPECT_THROW(sa.user_store_keys().get(), std::logic_error);
@@ -418,7 +422,7 @@ class map_host : public minimal_host {
 TEST_F(UserStoreTest, ClientDescribesSettingsInItsUserStore) {
   memory_server_transport transport;
   wish::server srv{transport, std::make_unique<wish::null_renderer>()};
-  srv.set_store_dir(dir_);
+  srv.set_home(dir_);
   srv.start(std::make_shared<wish::local_auth_module>());
 
   std::vector<std::string> keys;
@@ -435,7 +439,7 @@ TEST_F(UserStoreTest, ClientDescribesSettingsInItsUserStore) {
   srv.stop();
 
   EXPECT_EQ(keys, (std::vector<std::string>{"bdg.desktop.example#schema", "wish.category.example#schema"}));
-  wish::persistent_store store(dir_ / "users" / "alice.bison");
+  wish::persistent_store store(dir_ / "users" / "alice" / "store.bison");
   auto catalog = wish::settings::collect(store);
   ASSERT_EQ(catalog.settings.size(), size_t{2});
   EXPECT_EQ(catalog.settings[0].info.label, "Color");
@@ -446,7 +450,7 @@ TEST_F(UserStoreTest, ClientDescribesSettingsInItsUserStore) {
 TEST_F(UserStoreTest, DescribingNeedsAnIdentityAndValidMetadata) {
   memory_server_transport transport;
   wish::server srv{transport, std::make_unique<wish::null_renderer>()};
-  srv.set_store_dir(dir_);
+  srv.set_home(dir_);
   srv.start(std::make_shared<wish::local_auth_module>());
 
   bool anonymous_threw = false;
@@ -474,7 +478,7 @@ TEST_F(UserStoreTest, DescribingNeedsAnIdentityAndValidMetadata) {
 
 TEST_F(UserStoreTest, StandaloneDescribesSettings) {
   wish::standalone sa{std::make_unique<wish::null_renderer>()};
-  sa.set_store_dir(dir_);
+  sa.set_home(dir_);
   sa.set_user_identity("carol");
   sa.start();
   sa.describe_setting(color_setting()).get();
@@ -520,7 +524,7 @@ class session_tracking_server : public wish::server {
 TEST_F(UserStoreTest, OnlyListedIdentitiesAreSettingsAdmins) {
   memory_server_transport transport;
   session_tracking_server srv{transport, std::make_unique<wish::null_renderer>()};
-  srv.set_store_dir(dir_);
+  srv.set_home(dir_);
   srv.set_settings_admins({"alice"});
   srv.start(std::make_shared<wish::local_auth_module>());
 
@@ -548,7 +552,7 @@ class exposed_standalone : public wish::standalone {
 
 TEST_F(UserStoreTest, StandaloneSessionIsSettingsAdmin) {
   exposed_standalone sa{std::make_unique<wish::null_renderer>()};
-  sa.set_store_dir(dir_);
+  sa.set_home(dir_);
   sa.set_user_identity("carol");
   sa.start();
   bool admin = false;

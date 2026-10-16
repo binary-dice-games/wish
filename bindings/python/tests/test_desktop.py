@@ -18,6 +18,9 @@ import unittest
 import uuid
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.dirname(__file__))
+
+import _wish_home  # noqa: E402,F401  (before any server starts)
 
 from wish import Client, Server
 

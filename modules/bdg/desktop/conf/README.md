@@ -39,8 +39,9 @@ wish client --run conf --username alice     # Start > Settings on wish desktop
 - **Live:** the tool re-reads the stores every two seconds, so settings that
   other apps declare or change appear while it is open.
 
-Anonymous sessions (no `--username`) have no user store; the panel explains
-how to connect with one.
+Anonymous sessions (`--anonymous`) have no user store; the panel explains
+how to connect with one. Without `--username`, the tool connects as the OS
+user.
 
 - **server/**: `Conf` form (`register_conf()`), a `common::tool_form` that
   reads both stores through `src/context/settings_store.hpp`, builds the

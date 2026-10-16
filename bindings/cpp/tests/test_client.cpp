@@ -13,6 +13,8 @@
 #include <bison_c.h>
 #include <gtest/gtest.h>
 #include <auth/local_auth_module.hpp>
+#include <context/os_user.hpp>
+#include <context/wish_home.hpp>
 #include <server/registry.hpp>
 #include <server/server.hpp>
 
@@ -377,7 +379,7 @@ class WishCppUserStoreTest : public ::testing::Test {
     dir_ = std::filesystem::temp_directory_path() / (std::string{"wish_cpp_store_"} + info->name());
     std::filesystem::remove_all(dir_);
     auto s = start_on_free_port_configured<bdg::bison::rmi::transport::socket_server_transport>(
-        0, [this](bdg::wish::server& srv) { srv.set_store_dir(dir_); },
+        0, [this](bdg::wish::server& srv) { srv.set_home(dir_); },
         std::make_shared<bdg::wish::local_auth_module>());
     transport_ = std::move(s.transport);
     server_ = std::move(s.server);
@@ -390,9 +392,14 @@ class WishCppUserStoreTest : public ::testing::Test {
     std::filesystem::remove_all(dir_, ec);
   }
 
+  // Empty @p username: an explicitly anonymous session (without
+  // "anonymous", the session would connect as the OS user).
   static wish::value as_user(const std::string& username) {
     wish::value p;
-    if (!username.empty()) p["username"_key] = username;
+    if (!username.empty())
+      p["username"_key] = username;
+    else
+      p["anonymous"_key] = true;
     return p;
   }
 
@@ -493,13 +500,15 @@ TEST_F(WishCppUserStoreTest, ReadsSettingsOrTheirDefaults) {
       as_user("alice"));
   // Anonymous: the default, not an error.
   auto anon = wish::client::tcp("127.0.0.1", port_);
-  anon.run([](wish::client& c) {
-    wish::setting_info on;
-    on.name = "bdg.desktop.example.on";
-    on.type = "bool";
-    on.default_value = true;
-    EXPECT_TRUE(std::get<bool>(c.read_setting(on)));
-  });
+  anon.run(
+      [](wish::client& c) {
+        wish::setting_info on;
+        on.name = "bdg.desktop.example.on";
+        on.type = "bool";
+        on.default_value = true;
+        EXPECT_TRUE(std::get<bool>(c.read_setting(on)));
+      },
+      as_user(""));
 }
 
 TEST_F(WishCppUserStoreTest, ClientPostsAndDismissesNotifications) {
@@ -517,15 +526,24 @@ TEST_F(WishCppUserStoreTest, ClientPostsAndDismissesNotifications) {
 
 TEST_F(WishCppUserStoreTest, AnonymousClientGetsUnavailable) {
   auto client = wish::client::tcp("127.0.0.1", port_);
-  client.run([](wish::client& c) {
-    EXPECT_FALSE(c.has_user_store());
-    try {
-      c.user_store_keys();
-      FAIL() << "expected wish::error";
-    } catch (const wish::error& e) {
-      EXPECT_EQ(e.code(), WISH_ERR_UNAVAILABLE);
-    }
-  });
+  client.run(
+      [](wish::client& c) {
+        EXPECT_FALSE(c.has_user_store());
+        try {
+          c.user_store_keys();
+          FAIL() << "expected wish::error";
+        } catch (const wish::error& e) {
+          EXPECT_EQ(e.code(), WISH_ERR_UNAVAILABLE);
+        }
+      },
+      as_user(""));
+}
+
+TEST_F(WishCppUserStoreTest, ClientWithoutUsernameConnectsAsOsUser) {
+  if (bdg::wish::normalize_identity(bdg::wish::os_user_name()).empty())
+    GTEST_SKIP() << "the OS user name is unknown or not a valid identity";
+  auto client = wish::client::tcp("127.0.0.1", port_);
+  client.run([](wish::client& c) { EXPECT_TRUE(c.has_user_store()); });
 }
 
 // Firing a real "clicked" event needs a live renderer frame loop (see

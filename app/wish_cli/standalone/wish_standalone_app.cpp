@@ -8,6 +8,7 @@
 #include "src/client/app_registry.hpp"
 
 #include <context/logger.hpp>
+#include <context/os_user.hpp>
 #include <server/registry.hpp>
 #include <server/renderer.hpp>
 #include <sdl/sdl3_renderer.hpp>
@@ -43,34 +44,30 @@ DECLARE_int32(font_size);
 DECLARE_string(renderer);
 DECLARE_int32(web_port);
 DECLARE_string(web_bind);
+DECLARE_bool(profiling);
 DECLARE_string(profiling_dir);
 DECLARE_bool(profiling_autostart);
 DECLARE_bool(allow_absolute_paths);
-DECLARE_string(sandbox_root);
-DECLARE_string(store_dir);
 DECLARE_string(username);
+DECLARE_bool(anonymous);
 #else
 DEFINE_int32(font_size, 16, "Font size in pixels");
 DEFINE_string(renderer, "web", "Rendering backend: sdl3, web, or none (no UI)");
 DEFINE_int32(web_port, 8080, "HTTP/WebSocket port for --renderer web");
 DEFINE_string(web_bind, "127.0.0.1", "Bind address for --renderer web (localhost-only by default)");
-DEFINE_string(profiling_dir, "", "Directory for Perfetto trace output; empty disables profiling");
-DEFINE_bool(profiling_autostart, false, "Start capture immediately on startup (requires --profiling_dir)");
+DEFINE_bool(profiling, false, "Enable the Perfetto profiler; traces go to <wish_home>/traces (or --profiling_dir)");
+DEFINE_string(profiling_dir, "", "Directory for Perfetto trace output; setting it also enables profiling");
+DEFINE_bool(profiling_autostart, false, "Start capture immediately on startup (requires --profiling)");
 DEFINE_bool(allow_absolute_paths, false,
             "Allow widgets (e.g. editor, nano) to reference files by "
             "absolute path outside the session sandbox. Safe in standalone mode -- server "
             "and client are the same process -- see wish::standalone::set_allow_absolute_paths().");
-DEFINE_string(sandbox_root, "",
-              "Directory under which the session sandbox persists across runs: the session uses "
-              "<sandbox_root>/<username> (--username, or 'default') instead of a temp directory "
-              "deleted on exit.");
-DEFINE_string(store_dir, "",
-              "Directory holding the persistent server store and user stores (see "
-              "docs/persistent-store.md); empty: ~/.wish.");
 DEFINE_string(username, "",
-              "Identity selecting the user store and the persistent sandbox directory under "
-              "--sandbox_root (empty: 'default')");
+              "Identity selecting the session's profile (user store and persistent sandbox) under the "
+              "wish home (empty: the logged-in OS user)");
+DEFINE_bool(anonymous, false, "Run without an identity: no user store, and a temporary sandbox deleted on exit");
 #endif
+DECLARE_string(wish_home);
 
 DECLARE_bool(list);
 DECLARE_string(run);
@@ -146,24 +143,14 @@ static log_level verbose_flag_level() {
 }
 
 std::shared_ptr<logger> make_standalone_logger() {
-  // --renderer none is for apps run as command line tools, often from a
-  // script or an agent in someone's project directory: keep the log out of
-  // the working directory there.
-  std::filesystem::path log_dir{"wish_logs"};
-  if (FLAGS_renderer == "none") {
-    std::error_code ec;
-    auto temp = std::filesystem::temp_directory_path(ec);
-    if (!ec)
-      log_dir = temp / "wish_logs";
-  }
   return std::make_shared<logger>(
       bison::dynamic::instantiate(bison::key_t{"wish"}, bison::key_t{"__WishLogger"}),
       verbose_flag_level(),
-      log_dir / "standalone.log");
+      wish_home{FLAGS_wish_home}.logs_dir() / "standalone.log");
 }
 
 // Flags --save_defaults never saves, on top of the ones config_flag_names()
-// always leaves out (--store_dir, secrets, gflags' own): the app selection,
+// always leaves out (--wish_home, secrets, gflags' own): the app selection,
 // the rejected transport flags, and the debug and security switches. Every
 // other flag can be saved.
 const std::vector<std::string> kStandaloneExcludedFlags = {
@@ -175,6 +162,7 @@ const std::vector<std::string> kStandaloneExcludedFlags = {
     "port",
     "name",
     "debugger",
+    "profiling",
     "profiling_dir",
     "profiling_autostart",
     "allow_absolute_paths",
@@ -243,7 +231,7 @@ int wish_standalone_app::run(int argc, char** argv) {
     }
   }
 
-  load_cli_config(FLAGS_store_dir, kStandaloneConfigEntry, kStandaloneExcludedFlags, "[wish standalone]");
+  load_cli_config(FLAGS_wish_home, kStandaloneConfigEntry, kStandaloneExcludedFlags, "[wish standalone]");
   // `--save_defaults`/`--clear_defaults` alone only update the saved defaults.
   if (FLAGS_run.empty() && (FLAGS_save_defaults || FLAGS_clear_defaults))
     return 0;
@@ -290,26 +278,26 @@ std::unique_ptr<bison::rmi::standalone> wish_standalone_app::make_standalone() {
   auto session = std::make_unique<wish_standalone_session>(make_renderer(), app_args_);
   session->set_logger(make_standalone_logger()); // must be called before start()
   session->set_allow_absolute_paths(FLAGS_allow_absolute_paths); // must be called before start()
-  const std::string identity = FLAGS_username.empty() ? "default" : FLAGS_username;
-  if (!FLAGS_sandbox_root.empty()) // must be called before start()
-    session->set_persistent_sandbox(FLAGS_sandbox_root, identity);
-  // Standalone is single-user and local: always give the session a user
-  // store, under --username or 'default'.
-  session->set_user_identity(identity); // must be called before start()
-  if (!FLAGS_store_dir.empty())
-    session->set_store_dir(FLAGS_store_dir); // must be called before start()
+  session->set_home(FLAGS_wish_home); // must be called before start()
+  // Standalone is single-user and local: the session is --username, else
+  // the OS user, with a persistent sandbox -- unless --anonymous.
+  if (!FLAGS_anonymous) // must be called before start()
+    session->set_user_identity(FLAGS_username.empty() ? os_user_name() : FLAGS_username);
   return session;
 #endif
 }
 
 void wish_standalone_app::open_session(bison::rmi::standalone& sa) {
   auto& session = static_cast<wish_standalone_session&>(sa);
-  if (!FLAGS_profiling_dir.empty())
-    session.enable_profiling(FLAGS_profiling_dir);
+  std::filesystem::path trace_dir = FLAGS_profiling_dir;
+  if (trace_dir.empty() && FLAGS_profiling)
+    trace_dir = session.home().traces_dir();
+  if (!trace_dir.empty())
+    session.enable_profiling(trace_dir);
   session.start();
   if (FLAGS_profiling_autostart) {
-    if (FLAGS_profiling_dir.empty())
-      std::cout << "[wish standalone] --profiling_autostart requires --profiling_dir; ignoring\n";
+    if (trace_dir.empty())
+      std::cout << "[wish standalone] --profiling_autostart requires --profiling; ignoring\n";
     else
       session.start_capture_now("startup");
   }

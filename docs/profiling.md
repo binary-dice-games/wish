@@ -10,11 +10,13 @@ for the underlying mechanism (`BISON_TRACE_SCOPE`, `enable_profiling()`,
 ## Capturing a trace from `wish-server`
 
 ```sh
-wish-server --renderer=sdl3 --profiling_dir=./traces --profiling_autostart
+wish-server --renderer=sdl3 --profiling --profiling_autostart
 ```
 
-- `--profiling_dir=DIR` enables profiling and writes the trace file under
-  `DIR`. Omit it (default `""`) to disable profiling entirely — the
+- `--profiling` enables profiling and writes the trace file under
+  `~/.wish/traces` (the [wish home](wish-home.md)'s `traces/`).
+  `--profiling_dir=DIR` writes it under `DIR` instead, and also enables
+  profiling. With neither (the default), profiling is off entirely — the
   `BISON_TRACE_SCOPE` calls in the render loop become no-ops.
 - `--profiling_autostart` starts capture immediately at server startup.
   Without it, profiling is enabled but idle until something starts capture
@@ -54,5 +56,5 @@ enabled; it is otherwise inert.
 ## Viewing a trace
 
 Open https://ui.perfetto.dev/, choose "Open trace file", and select the
-`.perfetto-trace` file under `--profiling_dir`. Each traced thread (server
+`.perfetto-trace` file under `~/.wish/traces` (or `--profiling_dir`). Each traced thread (server
 render thread, client thread) appears as its own track.

@@ -32,8 +32,9 @@ Response, History, Collections, Environments, Console.
   applies `{{name}}` environment substitution, and persists
   Collections/Environments/History in the session's user store (see
   [docs/persistent-store.md](../../../../docs/persistent-store.md)), which
-  requires connecting with `--username`. Anonymous sessions keep them in
-  memory only, and the Console says so.
+  requires an identity (the OS user by default, or `--username`).
+  Anonymous sessions (`--anonymous`) keep them in memory only, and the
+  Console says so.
 - **resources/**: none.
 
 Build: off by default. `cmake -S . -B build -DWISH_MODULE_BDG_DEV_CURL=ON`

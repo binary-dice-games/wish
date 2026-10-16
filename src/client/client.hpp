@@ -76,14 +76,27 @@ class client : public bison::rmi::client {
    * Disconnects even if `on_session()` throws; the exception is re-thrown
    * after `disconnect()` completes.
    *
-   * @param connect_params Forwarded unchanged to `bison::rmi::client::connect()`
+   * @param connect_params Forwarded to `bison::rmi::client::connect()`
    *                        -- reaches both the transport's `open()` and the
    *                        server's `OP_CONNECT` payload, e.g. fields a
    *                        server-side `auth_module_iface` inspects (see
-   *                        `src/auth/DESIGN.md`). Empty by default, matching
-   *                        prior behavior.
+   *                        `src/auth/DESIGN.md`) -- after
+   *                        `apply_default_identity()`: without a `username`
+   *                        or `anonymous: true`, the session connects as the
+   *                        logged-in OS user.
    */
   void run(bison::dynamic connect_params = bison::dynamic{});
+
+  /**
+   * @brief Adds the default session identity to @p params: `username` set
+   *        to `os_user_name()`, unless @p params already has a `username`
+   *        or `anonymous: true`, or the OS user is unknown. See
+   *        src/context/DESIGN.md.
+   *
+   * `run()` calls it; code that calls `connect()` directly calls it first
+   * to get the same default.
+   */
+  static void apply_default_identity(bison::dynamic& params);
 
   /**
    * @brief Register a callback fired once this session's connection has

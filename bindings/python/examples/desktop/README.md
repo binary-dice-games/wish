@@ -40,7 +40,7 @@ python3 bindings/python/examples/desktop/live_chart.py &
 
 To start them from the Start menu, pin them, or put them on the desktop,
 add them to the [desktop configuration file](../../../../docs/desktop-config.md)
-(`~/.wish/desktop/desktop.yaml`):
+(`~/.wish/users/<user>/desktop/desktop.yaml`):
 
 ```yaml
 start_menu:

@@ -10,6 +10,8 @@
 #include <context/style_service.hpp>
 #include <context/user_store_service.hpp>
 #include "src/rmi/shared/profiling.hpp"
+#include "src/rmi/transport/socket_transport.hpp"
+#include "src/rmi/transport/tls_socket_transport.hpp"
 #include <ui/ui_root.hpp>
 
 #ifdef WISH_AUTOMATION_ENABLED
@@ -42,8 +44,23 @@ using namespace bison::rmi::transport;
 
 // ── server ────────────────────────────────────────────────────────────────────
 
+bool is_loopback_host(const std::string& host) {
+  return host == "localhost" || host == "::1" || host == "[::1]" || host.rfind("127.", 0) == 0;
+}
+
 server::server(server_transport_iface& transport, std::unique_ptr<renderer> r)
-    : bison::rmi::server(transport), renderer_(std::move(r)) {}
+    : bison::rmi::server(transport),
+      renderer_(std::move(r)),
+      network_transport_(dynamic_cast<socket_server_transport*>(&transport) != nullptr ||
+                         dynamic_cast<tls_socket_server_transport*>(&transport) != nullptr) {}
+
+void server::set_settings_admins(const std::set<std::string>& identities) {
+  settings_admins_.clear();
+  for (const auto& id : identities) {
+    if (auto normalized = normalize_identity(id); !normalized.empty())
+      settings_admins_.insert(std::move(normalized));
+  }
+}
 
 server::~server() {
   if (running_.load(std::memory_order_acquire)) {
@@ -148,13 +165,14 @@ void server::on_session_destroyed(bison::rmi::context& ctx) {
 #endif
 }
 
-void server::on_authenticated(bison::rmi::context& ctx, const std::string& identity) {
+void server::on_authenticated(bison::rmi::context& ctx, const std::string& raw_identity) {
   // The base class holds this context's wlock for the duration of this
   // call, as it does for the whole OP_CONNECT dispatch that triggers it.
-  if (identity.empty())
+  if (raw_identity.empty())
     return; // anonymous session: no user store, default temp sandbox
-  if (!is_safe_sandbox_identity(identity)) {
-    on_print(ctx.session_id, "[rmi] rejected unsafe identity: " + identity);
+  const std::string identity = normalize_identity(raw_identity);
+  if (identity.empty()) {
+    on_print(ctx.session_id, "[rmi] rejected unsafe identity: " + raw_identity);
     return;
   }
 
@@ -166,9 +184,9 @@ void server::on_authenticated(bison::rmi::context& ctx, const std::string& ident
   if (s.notification_service)
     s.notification_service->set_source(identity);
 
-  if (persistent_sandbox_root_.empty())
-    return; // no persistent sandboxes configured
-  s.adopt_persistent_resource_dir(persistent_sandbox_root_ / identity);
+  if (!persistent_sandboxes())
+    return;
+  s.adopt_persistent_resource_dir(home().user_sandbox_dir(identity));
   // Re-instantiate so the singleton __WishFileSystem object handed out by
   // find_singleton_service()/on_create_object() points at the persistent
   // directory instead of the temp one on_session_created() set up.

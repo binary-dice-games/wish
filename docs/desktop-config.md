@@ -1,8 +1,9 @@
 # Desktop configuration file
 
 `wish desktop` reads its configuration from a per-user YAML (or JSON) file,
-`~/.wish/desktop/desktop.yaml` by default (`--config PATH` to use another
-one). If the file doesn't exist, the desktop writes the default configuration
+`~/.wish/users/<user>/desktop/desktop.yaml` by default, in the profile of
+the user the desktop connects as (`--upstream_username`, else the OS user;
+see [wish-home.md](wish-home.md)). `--config PATH` uses another one. If the file doesn't exist, the desktop writes the default configuration
 there and uses it. The desktop watches the file: save it in any editor and the
 running desktop reloads it. The default Start menu has a pinned **Settings** entry (the
 [Settings tool](settings.md), `bdg/desktop/conf`) and an **Edit desktop

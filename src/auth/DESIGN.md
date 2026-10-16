@@ -13,6 +13,17 @@ accept loop is running, so a setter with a "must call before start()"
 convention-only contract was replaced with a compile-time-enforced
 parameter instead. Everything else matches this document as designed.
 
+**Superseded in part by [src/context/DESIGN.md](../context/DESIGN.md)**
+(the wish home): `set_persistent_sandbox_root()`, `--sandbox_root` and the
+`default` fallback identity are gone. A valid identity's sandbox is now
+`<wish_home>/users/<identity>/sandbox`, enabled by
+`server::set_persistent_sandboxes()` (on by default for local-only
+transports); identities are normalized (`normalize_identity()`); and
+clients send the OS user unless they ask for `anonymous`. Below,
+`persistent_sandbox_root_ / identity` reads as that directory and "root
+set" as "persistent sandboxes on". The auth hook, `local_auth_module` and
+the sandbox's internal layout are unchanged.
+
 ## Overview
 
 Every wish session currently gets a throwaway temp directory
@@ -309,22 +320,21 @@ this design's hook fully supports without further bison/wish changes.
 An authenticated identity now has a second use besides the persistent sandbox:
 
 - `on_authenticated()` attaches that identity's **user store**
-  (`<store_dir>/users/<identity>.bison`, see
+  (`<wish_home>/users/<identity>/store.bison`, see
   [docs/persistent-store.md](../../docs/persistent-store.md)) and its
   `__WishUserStore` RMI service.
-- This happens whenever the identity is non-empty and passes
-  `is_safe_sandbox_identity()`, independently of
-  `persistent_sandbox_root_`. The early return described above now guards
-  only the sandbox switch.
+- This happens whenever the identity normalizes to a valid one, whether
+  or not persistent sandboxes are on. The early return described above
+  now guards only the sandbox switch.
 - An empty or unsafe identity still means an anonymous session: no user
   store, temp sandbox.
 
 So that identified clients get a user store by default, `wish server` and
 `wish_server_start()` (C ABI) now **always** install `local_auth_module`:
 
-- Without `--sandbox_root`, it has no default identity, so clients without
-  `--username` stay anonymous.
-- With `--sandbox_root`, the existing `default` fallback is unchanged.
+- It has no default identity; clients send one themselves (the OS user
+  unless `--username` or `--anonymous`), so a client that sends none stays
+  anonymous.
 
 An embedder calling `wish::server::start()` directly still chooses its own
 module, or none.
@@ -435,7 +445,7 @@ and anything a crashed or careless tool leaves behind confronts every
 later tool. The layout is therefore:
 
 ```
-<root>/<identity>/
+<wish_home>/users/<identity>/sandbox/
   ...                                  shared: the user's files, browsed by mc/pix/FileDialog
   res/                                 embedded assets (populate_resource_dir())
   private/apps/<org>.<collection>.<name>/

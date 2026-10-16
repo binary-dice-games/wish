@@ -51,18 +51,20 @@ DEFINE_string(renderer, "web", "Rendering backend: sdl3 or web (standalone also 
 // renderer's HTTP/WebSocket port.
 DEFINE_int32(web_port, 8080, "HTTP/WebSocket port for --renderer web");
 DEFINE_string(web_bind, "127.0.0.1", "Bind address for --renderer web (localhost-only by default)");
-DEFINE_string(profiling_dir, "", "Directory for Perfetto trace output; empty disables profiling");
-DEFINE_bool(profiling_autostart, false, "Start capture immediately on server startup (requires --profiling_dir)");
+DEFINE_bool(profiling, false, "Enable the Perfetto profiler; traces go to <wish_home>/traces (or --profiling_dir)");
+DEFINE_string(profiling_dir, "", "Directory for Perfetto trace output; setting it also enables profiling");
+DEFINE_bool(profiling_autostart, false, "Start capture immediately on server startup (requires --profiling)");
 DEFINE_bool(allow_absolute_paths, false,
             "Allow widgets (e.g. editor, nano) to reference files by "
             "absolute path outside the session sandbox. Only enable for trusted, "
             "single-operator deployments -- see wish::server::set_allow_absolute_paths().");
 
-DEFINE_string(sandbox_root, "",
-              "Directory under which session sandboxes persist across connections: each client gets "
-              "<sandbox_root>/<username> (its --username, or 'default') instead of a temp directory "
-              "deleted on disconnect. Trusts the client-supplied username -- local/single-user "
-              "deployments only; see wish::server::set_persistent_sandbox_root().");
+DEFINE_string(persistent_sandboxes, "auto",
+              "Whether identified clients keep their sandbox across connections, in "
+              "<wish_home>/users/<username>/sandbox: true, false, or auto (on for pipe/term and "
+              "loopback TCP/TLS, off for a network-reachable bind). Trusts the client-supplied "
+              "username -- turn it on for a network bind only on a trusted network. Anonymous "
+              "clients always get a temporary sandbox.");
 DEFINE_string(
     settings_admins,
     "",
@@ -72,12 +74,11 @@ DEFINE_string(
 DEFINE_string(overlay_hotkey, "Shift+F1",
               "Key combination that opens the server overlay (clients, settings, logs, ...), e.g. "
               "Shift+F1 or Ctrl+Shift+O; empty disables the overlay and its startup notification.");
-DEFINE_string(screenshot_dir, "wish_screenshots",
-              "Directory the server overlay's Screenshot button saves PNG files to (created on demand).");
-DEFINE_string(store_dir, "",
-              "Directory holding the persistent server store and per-user stores (see "
-              "docs/persistent-store.md); empty: ~/.wish. Clients get a user store only when they "
-              "connect with --username.");
+DEFINE_string(screenshot_dir, "",
+              "Directory the server overlay's Screenshot button saves PNG files to (created on demand); "
+              "empty: <wish_home>/screenshots.");
+
+DECLARE_string(wish_home);
 
 #ifndef WISH_VERSION_STRING
 #define WISH_VERSION_STRING "dev"
@@ -90,10 +91,11 @@ namespace {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 // Flags --save_defaults never saves, on top of the ones config_flag_names()
-// always leaves out (--store_dir, secrets, gflags' own): the debug and
+// always leaves out (--wish_home, secrets, gflags' own): the debug and
 // security switches. Every other flag can be saved.
 const std::vector<std::string> kServerExcludedFlags = {
     "debugger",
+    "profiling",
     "profiling_dir",
     "profiling_autostart",
     "allow_absolute_paths",
@@ -135,11 +137,19 @@ static log_level verbose_flag_level() {
       "--verbose: invalid level '" + FLAGS_verbose + "' (expected none|fatal|error|warning|info|trace)");
 }
 
+// Where profiler traces go: --profiling_dir, else <wish_home>/traces with
+// --profiling; empty when profiling is off.
+std::filesystem::path profiling_dir(const wish_home& home) {
+  if (!FLAGS_profiling_dir.empty())
+    return FLAGS_profiling_dir;
+  return FLAGS_profiling ? home.traces_dir() : std::filesystem::path{};
+}
+
 static std::shared_ptr<logger> make_server_logger() {
   return std::make_shared<logger>(
       bison::dynamic::instantiate(bison::key_t{"wish"}, bison::key_t{"__WishLogger"}),
       verbose_flag_level(),
-      std::filesystem::path{"wish_logs"} / "server.log");
+      wish_home{FLAGS_wish_home}.logs_dir() / "server.log");
 }
 
 } // namespace
@@ -160,7 +170,7 @@ std::string server_endpoint_description() {
 }
 
 void load_server_cli_config(const std::string& log_prefix) {
-  load_cli_config(FLAGS_store_dir, kServerConfigEntry, kServerExcludedFlags, log_prefix);
+  load_cli_config(FLAGS_wish_home, kServerConfigEntry, kServerExcludedFlags, log_prefix);
 }
 
 // ── server_app overrides ──────────────────────────────────────────────────────
@@ -274,23 +284,31 @@ configured_server::configured_server(
     }
     srv.set_settings_admins(std::move(admins));
   }
-  if (!FLAGS_profiling_dir.empty())
-    srv.enable_profiling(FLAGS_profiling_dir);
-  if (!FLAGS_store_dir.empty())
-    srv.set_store_dir(FLAGS_store_dir);
-  log_->info("persistent stores under " + srv.store_dir().string());
-  // Always trust the client-supplied --username as the session identity, so
-  // identified clients get a user store; a client without one stays
-  // anonymous -- unless --sandbox_root is set, which keeps its 'default'
-  // fallback identity so every client gets a persistent sandbox.
-  bison::rmi::auth_module_ptr auth;
-  if (!FLAGS_sandbox_root.empty()) {
-    srv.set_persistent_sandbox_root(FLAGS_sandbox_root);
-    auth = std::make_shared<local_auth_module>("default");
-    log_->info("persistent sandboxes under " + FLAGS_sandbox_root);
+  srv.set_home(FLAGS_wish_home);
+  const wish_home& home = srv.home();
+  const std::filesystem::path trace_dir = profiling_dir(home);
+  if (!trace_dir.empty())
+    srv.enable_profiling(trace_dir);
+  if (FLAGS_persistent_sandboxes == "true") {
+    srv.set_persistent_sandboxes(true);
+  } else if (FLAGS_persistent_sandboxes == "false") {
+    srv.set_persistent_sandboxes(false);
   } else {
-    auth = std::make_shared<local_auth_module>();
+    if (FLAGS_persistent_sandboxes != "auto")
+      log_->info("--persistent_sandboxes: '" + FLAGS_persistent_sandboxes + "' is not true, false or auto; using auto");
+    // The server alone can't see a TCP/TLS bind address; a loopback bind
+    // only accepts local connections, like a pipe.
+    using bison::app::transport_kind;
+    const auto kind = bison::app::selected_transport();
+    if ((kind == transport_kind::tcp || kind == transport_kind::tls) && is_loopback_host(FLAGS_host))
+      srv.set_persistent_sandboxes(true);
   }
+  log_->info("wish home: " + home.root().string() +
+             (srv.persistent_sandboxes() ? " (persistent sandboxes for identified clients)" : ""));
+  // Always trust the client-supplied --username as the session identity, so
+  // identified clients get a user store (and, with persistent sandboxes, a
+  // persistent sandbox); a client without one stays anonymous.
+  bison::rmi::auth_module_ptr auth = std::make_shared<local_auth_module>();
   if (overlay_host && !FLAGS_overlay_hotkey.empty()) {
     if (parse_key_chord(FLAGS_overlay_hotkey) == 0)
       std::cerr << "[wish] --overlay_hotkey: '" << FLAGS_overlay_hotkey
@@ -306,16 +324,18 @@ configured_server::configured_server(
     info.log_file = std::filesystem::absolute(log_->path(), ec);
     if (ec)
       info.log_file = log_->path();
-    info.sandbox_root = srv.persistent_sandbox_root();
+    info.persistent_sandboxes = srv.persistent_sandboxes();
     info.stores = srv.stores();
     info.settings_admins = srv.settings_admins();
-    info.screenshot_dir = std::filesystem::absolute(FLAGS_screenshot_dir, ec);
+    const std::filesystem::path shots =
+        FLAGS_screenshot_dir.empty() ? home.screenshots_dir() : std::filesystem::path{FLAGS_screenshot_dir};
+    info.screenshot_dir = std::filesystem::absolute(shots, ec);
     if (ec)
-      info.screenshot_dir = FLAGS_screenshot_dir;
-    if (!FLAGS_profiling_dir.empty()) {
-      info.profiler.dir = std::filesystem::absolute(FLAGS_profiling_dir, ec);
+      info.screenshot_dir = shots;
+    if (!trace_dir.empty()) {
+      info.profiler.dir = std::filesystem::absolute(trace_dir, ec);
       if (ec)
-        info.profiler.dir = FLAGS_profiling_dir;
+        info.profiler.dir = trace_dir;
       info.profiler.active = [&srv] { return srv.is_capture_active_now(); };
       info.profiler.start = [&srv] { return srv.start_capture_now("overlay"); };
       info.profiler.stop = [&srv] { srv.stop_capture_now(); };
@@ -324,8 +344,8 @@ configured_server::configured_server(
   }
   srv.start(auth, std::move(listen_params));
   if (FLAGS_profiling_autostart) {
-    if (FLAGS_profiling_dir.empty())
-      log_->info("--profiling_autostart requires --profiling_dir; ignoring");
+    if (trace_dir.empty())
+      log_->info("--profiling_autostart requires --profiling; ignoring");
     else
       srv.start_capture_now("startup");
   }

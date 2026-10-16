@@ -410,13 +410,16 @@ Any new widget whose render function reads or writes a file must:
 
 ### Optional auth module and persistent sandbox directories
 
-By default every session's `resource_dir` is a throwaway temp directory,
-deleted on disconnect. A server can opt in to a persistent, identity-keyed
-directory per client via `wish::server::start(auth_module)` (an optional
-`bison::rmi::auth_module_ptr`, evaluated once per connection) together with
-`wish::server::set_allow_absolute_paths`'s sibling setter,
-`set_persistent_sandbox_root(path)` — both are required before any session
-gets a directory outside the default temp location. `wish::local_auth_module`
+An anonymous session's `resource_dir` is a throwaway temp directory,
+deleted on disconnect. A session with an identity (from the auth module
+passed to `wish::server::start(auth_module)`, evaluated once per connection)
+gets a persistent profile under the wish home (`~/.wish/users/<identity>/`:
+user store, and the sandbox `sandbox/` when
+`wish::server::persistent_sandboxes()` is on -- by default for local-only
+transports). Clients send the OS user as their identity by default. Every
+path under the home comes from `wish::wish_home`; see
+`src/context/DESIGN.md`. Tests get a per-process scratch `WISH_HOME` from
+`tests/wish_test_main.cpp`; never point a test at the real home. `wish::local_auth_module`
 is a ready-to-use, trust-the-client module for local/single-user deployments;
 untrusted or remote deployments must supply their own `auth_module_iface`
 that verifies the client's claimed identity. See `src/auth/DESIGN.md` for

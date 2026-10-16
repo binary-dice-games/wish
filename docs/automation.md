@@ -356,9 +356,13 @@ e.g. `--run du --arg /usr/share` for `wish client --run=du -- /usr/share`.
 tool (verified 2026-10: `--run tail --lang es` shows "Controles", "Seguir",
 "3 líneas"; see [docs/i18n.md](i18n.md)). A translated label is also
 the widget's ImGui id, so match widgets by path, not by label.
-`--username NAME` connects the client with that identity, which gives it a
-persistent user store (curl needs one for Collections / Environments,
-otherwise its Console shows a red "user store" error).
+`--username NAME` connects the client with that identity (default: the OS
+user, which also shows up in the UI -- pass a sample name such as `alice`
+for screenshots). An identity gives the client a persistent user store
+(curl needs one for Collections / Environments, otherwise its Console shows
+a red "user store" error). Run the server with `--wish_home <scratch>` (or
+`WISH_HOME=<scratch>`) so the session's profile and sandbox don't land in
+the real `~/.wish`.
 
 This recipe also produces the `<name>.png` screenshot every tool keeps next
 to its `README.md` (see `CLAUDE.md`, "Tool READMEs and screenshots").
@@ -433,7 +437,7 @@ Gotchas this recipe already handles:
 ## Recipe: drive `wish desktop`
 
 Verified in a Claude Code cloud container (2026-10). Start the server under
-`AutomationClient` as in the recipe above (add `--store_dir <scratch>` so the
+`AutomationClient` as in the recipe above (add `--wish_home <scratch>` so the
 desktop's saved pins/theme don't land in `~/.wish`), then start the desktop
 against it with `subprocess.Popen`:
 
@@ -447,8 +451,8 @@ desk = subprocess.Popen([wish, "desktop", "--upstream_transport", "tcp", "--upst
   --web_port <free port>`** runs both in one process (verified 2026-10).
   Start it with `subprocess.Popen` as above, wait for the web port, then
   attach with `AutomationClient.launch(url="http://127.0.0.1:<port>")`
-  rather than `server_cmd=`. Pass `--store_dir <scratch>` to the desktop
-  itself; `exit` on its stdin closes the server too (the web port goes
+  rather than `server_cmd=`. Pass `--wish_home <scratch>` to the desktop
+  itself (it covers the server, the desktop config and the app logs); `exit` on its stdin closes the server too (the web port goes
   away). `__WishDesktop.shutdown_server` only opens the server's "Shut
   down the server?" confirmation; click **Shut down** in it to stop.
 - **Keep the desktop's stdin open** (`stdin=subprocess.PIPE`): it spawns an
@@ -461,7 +465,7 @@ desk = subprocess.Popen([wish, "desktop", "--upstream_transport", "tcp", "--upst
   dark theme, so a pinned icon at x=132 in light moved to x=112 in dark.
 - **Apps started from the desktop are real processes**: check them with
   `pgrep -af "wish client"`; their output is in
-  `<desktop cwd>/wish_logs/desktop/<app>_<n>.log`. Windows they open do show
+  `<wish_home>/logs/desktop/<app>_<n>.log`. Windows they open do show
   up in `get_tree()` as usual.
 - **Ctrl+Tab never reaches the page** in Chromium; the switcher also
   answers to Ctrl+\` (`keyboard.down("Control")`, `press("Backquote")`,
@@ -470,10 +474,10 @@ desk = subprocess.Popen([wish, "desktop", "--upstream_transport", "tcp", "--upst
   (1440x900, light theme: the button at (1270, 874); the menu opens upward,
   items about 22 px apart, Wish at y≈762 down to Classic at y≈828). Picking
   one restyles the desktop within a second (verified 2026-10).
-- **Theme and pins persist between runs** in `--store_dir`: delete it for a
+- **Theme and pins persist between runs** in `--wish_home`: delete it for a
   clean first run (nano, mc and top pinned, light theme).
-- **Pass `--config <scratch>/desktop.yaml`** so the desktop doesn't write
-  `~/.wish/desktop/desktop.yaml`. Rewriting that file while the desktop runs
+- **Pass `--wish_home <scratch>` (or `--config <scratch>/desktop.yaml`)** so
+  the desktop doesn't write `~/.wish/users/<user>/desktop/desktop.yaml`. Rewriting that file while the desktop runs
   rebuilds the Start menu within about a second, which is the quickest way
   to try a menu layout. A broken file shows its error in red at the top of
   the Start menu, which is easy to miss if the menu is closed in the

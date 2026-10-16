@@ -55,9 +55,9 @@ struct server_overlay_info {
   std::string endpoint; ///< Where clients connect, e.g. "tcp 0.0.0.0:7070".
   std::string renderer; ///< e.g. "sdl3" or "web (http://127.0.0.1:8080)".
   std::filesystem::path log_file; ///< The server log.
-  /// Persistent sandbox root (`--sandbox_root`); empty: each session gets a
-  /// temporary directory.
-  std::filesystem::path sandbox_root;
+  /// Whether identified sessions keep their sandbox under the wish home
+  /// (`server::persistent_sandboxes()`); anonymous ones never do.
+  bool persistent_sandboxes{false};
   /// The server's store registry; null hides the Settings page.
   store_registry_ptr stores;
   std::set<std::string> settings_admins; ///< `--settings_admins`.
@@ -71,7 +71,8 @@ struct server_overlay_info {
   /// Asks the renderer for a PNG of its next frame (see
   /// `renderer::request_screenshot()`); null hides the Screenshot button.
   std::function<bool(std::function<void(std::vector<uint8_t>)>)> request_screenshot;
-  /// Where screenshots are saved (`--screenshot_dir`), created on demand.
+  /// Where screenshots are saved (`--screenshot_dir`, default
+  /// `wish_home::screenshots_dir()`), created on demand.
   std::filesystem::path screenshot_dir;
 
   /// The host renderer's performance history; null hides the Performance
@@ -287,10 +288,10 @@ namespace detail {
 ///        most its last 256 KB); empty when it can't be read.
 std::vector<std::string> read_log_tail(const std::filesystem::path& path, size_t max_lines);
 
-/// @brief User identities with a store under @p store_dir (`users/<id>.bison`)
-///        plus @p connected, sorted and unique; unsafe names are skipped.
-std::vector<std::string> list_store_identities(const std::filesystem::path& store_dir,
-                                               const std::vector<std::string>& connected);
+/// @brief User identities with a profile under @p home
+///        (`wish_home::list_identities()`) plus @p connected, normalized,
+///        sorted and unique; invalid names are skipped.
+std::vector<std::string> list_store_identities(const wish_home& home, const std::vector<std::string>& connected);
 
 /// @brief Whether @p theme selects the overlay's own look: `kOverlayTheme`,
 ///        empty, or a name no renderer registered.

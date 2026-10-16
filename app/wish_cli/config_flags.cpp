@@ -29,6 +29,10 @@ DEFINE_bool(
     "Save the flags given on this command line to the server store as the defaults of "
     "later runs (command line > WISH_<FLAG> env var > saved default > built-in default)");
 DEFINE_bool(clear_defaults, false, "Erase the flag defaults saved with --save_defaults");
+DEFINE_string(wish_home,
+              "",
+              "Root of every file wish keeps for its users: stores, profiles (users/<name>/), logs, "
+              "screenshots, traces (see src/context/DESIGN.md); empty: ~/.wish");
 
 namespace bdg::wish {
 
@@ -63,7 +67,7 @@ bool is_secret(const std::string& name) {
 
 std::vector<std::string> config_flag_names(const std::vector<std::string>& excluded_flags) {
   // Never saved in any mode: the flags that drive the saved defaults.
-  static const std::set<std::string> kAlwaysExcluded = {"save_defaults", "clear_defaults", "store_dir"};
+  static const std::set<std::string> kAlwaysExcluded = {"save_defaults", "clear_defaults", "wish_home"};
 
   std::vector<gflags::CommandLineFlagInfo> flags;
   gflags::GetAllFlags(&flags);
@@ -302,11 +306,11 @@ void describe_config_flags(
 // ── CLI helper ───────────────────────────────────────────────────────────────
 
 void load_cli_config(
-    const std::string& store_dir,
+    const std::string& home_root,
     const std::string& entry_name,
     const std::vector<std::string>& excluded_flags,
     const std::string& log_prefix) {
-  store_registry stores{store_dir.empty() ? default_store_dir() : std::filesystem::path{store_dir}};
+  store_registry stores{wish_home{home_root}};
   auto store = stores.server_store();
 
   try {

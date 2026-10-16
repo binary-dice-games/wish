@@ -1,16 +1,20 @@
 // MIT License © 2025 Binary Dice Games
 //
 // End-to-end tests for the optional auth module hook and persistent sandbox
-// directories described in src/auth/DESIGN.md: local_auth_module identity
-// extraction, set_persistent_sandbox_root gating, and the path-escape guard
-// in server::on_authenticated.
+// directories described in src/auth/DESIGN.md and src/context/DESIGN.md:
+// local_auth_module identity extraction, the client's OS-user default,
+// identity normalization, set_persistent_sandboxes() gating, and the
+// path-escape guard in server::on_authenticated.
 #include <gtest/gtest.h>
 
 #include <auth/local_auth_module.hpp>
 #include <client/client.hpp>
+#include <context/os_user.hpp>
+#include <context/wish_home.hpp>
 #include <server/server.hpp>
 
 #include "src/rmi/rmi.hpp"
+#include "src/rmi/shared/ids.hpp"
 
 #include <chrono>
 #include <filesystem>
@@ -68,13 +72,20 @@ dynamic params_with_username(const std::string& username) {
   return p;
 }
 
+dynamic anonymous_params() {
+  dynamic p;
+  p["anonymous"_key] = true;
+  return p;
+}
+
 } // namespace
 
 class AuthTest : public ::testing::Test {
  protected:
   void SetUp() override {
     root_ = std::filesystem::temp_directory_path() /
-        ("wish_auth_test_" + std::to_string(reinterpret_cast<uintptr_t>(this)));
+        ("wish_auth_test_" + std::string{::testing::UnitTest::GetInstance()->current_test_info()->name()} + "_" +
+         std::to_string(static_cast<uint32_t>(bdg::bison::rmi::shared::generate_id().id)));
     std::filesystem::create_directories(root_);
   }
 
@@ -86,33 +97,69 @@ class AuthTest : public ::testing::Test {
   std::filesystem::path root_;
 };
 
-TEST_F(AuthTest, DefaultIdentityGivesNamelessClientsAPersistentSandbox) {
+TEST_F(AuthTest, NamelessClientConnectsAsTheOsUser) {
+  const std::string user = wish::normalize_identity(wish::os_user_name());
+  if (user.empty())
+    GTEST_SKIP() << "the OS user name is unknown or not a valid identity";
   memory_server_transport transport;
   wish::server srv{transport, std::make_unique<wish::null_renderer>()};
-  srv.set_persistent_sandbox_root(root_);
-  srv.start(std::make_shared<wish::local_auth_module>("default"));
+  srv.set_home(root_);
+  srv.start(std::make_shared<wish::local_auth_module>());
 
   {
     auth_test_client c{transport.connect()};
     c.upload_name = "keep.txt";
     c.upload_data = "kept";
-    c.run(dynamic{}); // no username
+    c.run(dynamic{}); // no username: wish::client::run() sends the OS user
   }
-  EXPECT_TRUE(std::filesystem::exists(root_ / "default" / "keep.txt"));
+  EXPECT_TRUE(std::filesystem::exists(root_ / "users" / user / "sandbox" / "keep.txt"));
+  srv.stop();
+}
+
+TEST_F(AuthTest, IdentityIsNormalizedToOneProfile) {
+  memory_server_transport transport;
+  wish::server srv{transport, std::make_unique<wish::null_renderer>()};
+  srv.set_home(root_);
+  srv.start(std::make_shared<wish::local_auth_module>());
+
   {
     auth_test_client c{transport.connect()};
-    c.download_name = "keep.txt";
-    c.run(dynamic{});
+    c.upload_name = "note.txt";
+    c.upload_data = "hi";
+    c.run(params_with_username("Alice"));
+  }
+  EXPECT_TRUE(std::filesystem::exists(root_ / "users" / "alice" / "sandbox" / "note.txt"));
+  {
+    auth_test_client c{transport.connect()};
+    c.download_name = "note.txt";
+    c.run(params_with_username("alice"));
     EXPECT_TRUE(c.download_ok) << c.download_error;
-    EXPECT_EQ(c.downloaded, "kept");
   }
   srv.stop();
+}
+
+TEST_F(AuthTest, PersistentSandboxesDefaultOffOnlyForNetworkTransports) {
+  memory_server_transport memory;
+  wish::server local_srv{memory, std::make_unique<wish::null_renderer>()};
+  EXPECT_TRUE(local_srv.persistent_sandboxes());
+
+  socket_server_transport tcp{"0.0.0.0", 0};
+  wish::server network_srv{tcp, std::make_unique<wish::null_renderer>()};
+  EXPECT_FALSE(network_srv.persistent_sandboxes());
+  network_srv.set_persistent_sandboxes(true);
+  EXPECT_TRUE(network_srv.persistent_sandboxes());
+
+  EXPECT_TRUE(wish::is_loopback_host("127.0.0.1"));
+  EXPECT_TRUE(wish::is_loopback_host("localhost"));
+  EXPECT_TRUE(wish::is_loopback_host("::1"));
+  EXPECT_FALSE(wish::is_loopback_host("0.0.0.0"));
+  EXPECT_FALSE(wish::is_loopback_host("192.168.1.2"));
 }
 
 TEST_F(AuthTest, UploadPersistsAcrossReconnectWithSameIdentity) {
   memory_server_transport transport;
   wish::server srv{transport, std::make_unique<wish::null_renderer>()};
-  srv.set_persistent_sandbox_root(root_);
+  srv.set_home(root_);
   srv.start(std::make_shared<wish::local_auth_module>());
 
   {
@@ -135,7 +182,7 @@ TEST_F(AuthTest, UploadPersistsAcrossReconnectWithSameIdentity) {
 TEST_F(AuthTest, DifferentIdentityDoesNotSeeAnotherIdentitysFiles) {
   memory_server_transport transport;
   wish::server srv{transport, std::make_unique<wish::null_renderer>()};
-  srv.set_persistent_sandbox_root(root_);
+  srv.set_home(root_);
   srv.start(std::make_shared<wish::local_auth_module>());
 
   {
@@ -157,22 +204,23 @@ TEST_F(AuthTest, DifferentIdentityDoesNotSeeAnotherIdentitysFiles) {
 TEST_F(AuthTest, NoIdentityFallsBackToNonPersistentTempDir) {
   memory_server_transport transport;
   wish::server srv{transport, std::make_unique<wish::null_renderer>()};
-  srv.set_persistent_sandbox_root(root_);
+  srv.set_home(root_);
   srv.start(std::make_shared<wish::local_auth_module>());
 
   {
     auth_test_client c{transport.connect()};
-    // No "username" field at all -- local_auth_module leaves identity empty.
+    // anonymous: no "username" field at all -- identity stays empty.
     c.upload_name = "temp.txt";
     c.upload_data = "temp-data";
-    c.run(dynamic{});
+    c.run(anonymous_params());
   }
   {
     auth_test_client c{transport.connect()};
     c.download_name = "temp.txt";
-    c.run(dynamic{});
+    c.run(anonymous_params());
     EXPECT_FALSE(c.download_ok) << "no-identity sessions must not persist across reconnects";
   }
+  EXPECT_FALSE(std::filesystem::exists(root_ / "users")) << "anonymous sessions write nothing under the home";
 
   srv.stop();
 }
@@ -180,7 +228,7 @@ TEST_F(AuthTest, NoIdentityFallsBackToNonPersistentTempDir) {
 TEST_F(AuthTest, PathEscapingIdentityIsRejectedAndDoesNotPersist) {
   memory_server_transport transport;
   wish::server srv{transport, std::make_unique<wish::null_renderer>()};
-  srv.set_persistent_sandbox_root(root_);
+  srv.set_home(root_);
   srv.start(std::make_shared<wish::local_auth_module>());
 
   {
@@ -197,14 +245,17 @@ TEST_F(AuthTest, PathEscapingIdentityIsRejectedAndDoesNotPersist) {
   }
   // The rejected identity must never have created a directory that escapes root_.
   EXPECT_FALSE(std::filesystem::exists(root_.parent_path() / "evil"));
+  EXPECT_FALSE(std::filesystem::exists(root_ / "evil"));
+  EXPECT_FALSE(std::filesystem::exists(root_ / "users"));
 
   srv.stop();
 }
 
-TEST_F(AuthTest, NoPersistentRootConfiguredBehavesUnchangedEvenWithAuthModule) {
+TEST_F(AuthTest, PersistentSandboxesOffKeepsATempSandbox) {
   memory_server_transport transport;
   wish::server srv{transport, std::make_unique<wish::null_renderer>()};
-  // set_persistent_sandbox_root() intentionally not called.
+  srv.set_home(root_);
+  srv.set_persistent_sandboxes(false);
   srv.start(std::make_shared<wish::local_auth_module>());
 
   {
@@ -217,7 +268,7 @@ TEST_F(AuthTest, NoPersistentRootConfiguredBehavesUnchangedEvenWithAuthModule) {
     auth_test_client c{transport.connect()};
     c.download_name = "note.txt";
     c.run(params_with_username("alice"));
-    EXPECT_FALSE(c.download_ok) << "persistence must stay off without set_persistent_sandbox_root()";
+    EXPECT_FALSE(c.download_ok) << "persistence must stay off with set_persistent_sandboxes(false)";
   }
 
   srv.stop();
@@ -226,7 +277,7 @@ TEST_F(AuthTest, NoPersistentRootConfiguredBehavesUnchangedEvenWithAuthModule) {
 TEST_F(AuthTest, NoAuthModuleBehavesUnchanged) {
   memory_server_transport transport;
   wish::server srv{transport, std::make_unique<wish::null_renderer>()};
-  srv.set_persistent_sandbox_root(root_);
+  srv.set_home(root_);
   srv.start(); // no auth_module argument
 
   {
@@ -250,9 +301,9 @@ TEST_F(AuthTest, NoAuthModuleBehavesUnchanged) {
 TEST_F(AuthTest, ToolTempDirIsPrivatePerSessionAndRemovedAtSessionEnd) {
   memory_server_transport transport;
   wish::server srv{transport, std::make_unique<wish::null_renderer>()};
-  srv.set_persistent_sandbox_root(root_);
+  srv.set_home(root_);
   srv.start(std::make_shared<wish::local_auth_module>());
-  const auto sandbox = root_ / "alice";
+  const auto sandbox = root_ / "users" / "alice" / "sandbox";
 
   std::string first_dir;
   {

@@ -97,10 +97,12 @@ CSV-hostile text), tables whose names need quoting (`order details`,
 - **Export CSV and Save PNG write on the server** (the **Open folder** button next to each opens that folder in the server machine's file manager), into the session's
   sandbox folder: the path must be relative (no absolute paths, no `..`),
   subfolders are created, and an existing file is only replaced when
-  *Overwrite* is ticked. The folder is deleted when the client disconnects
-  unless the server was started with `wish server --sandbox_root PATH`
-  (files then persist under `PATH/<--username of the client>`), so copy the file out (e.g. with a file-service
-  download) before closing.
+  *Overwrite* is ticked. On a local server the folder persists in
+  `~/.wish/users/<user>/sandbox` (see
+  [docs/wish-home.md](../../../../docs/wish-home.md)); for an anonymous
+  client, or a network server without `--persistent_sandboxes`, it is
+  deleted when the client disconnects, so copy the file out (e.g. with a
+  file-service download) before closing.
 - **Passwords never appear on a command line**: the Add form passes the
   password to `sq add -p` on stdin, and locations are masked in the
   Connections table and the Console.

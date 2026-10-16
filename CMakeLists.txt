@@ -319,8 +319,10 @@ add_library(wish_client STATIC
   src/ui/ui_descriptor.hpp
   src/ui/ui_descriptor.cpp
   src/ui/yaml_json.hpp
-  src/context/store_dir.hpp
-  src/context/store_dir.cpp
+  src/context/wish_home.hpp
+  src/context/wish_home.cpp
+  src/context/os_user.hpp
+  src/context/os_user.cpp
   src/context/settings_schema.hpp
   src/context/settings_schema.cpp
   src/i18n/translations.hpp
@@ -339,6 +341,10 @@ target_include_directories(wish_client
 target_link_libraries(wish_client PUBLIC bison)
 # libyaml is needed by ui_descriptor.cpp; PRIVATE because it is an impl detail.
 target_link_libraries(wish_client PRIVATE yaml)
+if(WIN32)
+  # GetUserNameW() in src/context/os_user.cpp.
+  target_link_libraries(wish_client PRIVATE advapi32)
+endif()
 
 # ── wish_server — server, renderer, and all UI elements (heavy stack) ─────────
 

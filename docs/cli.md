@@ -49,7 +49,8 @@ all; passing any of `--transport`/`--host`/`--port`/`--name` is an error).
 ### Log verbosity
 
 `--verbose` selects a level (ascending verbosity). The server always opens
-`wish_logs/server.log`; what gets written depends on the level:
+`~/.wish/logs/server.log` (see [wish-home.md](wish-home.md)); what gets
+written depends on the level:
 
 | Level | Effect |
 |-------|--------|
@@ -98,10 +99,11 @@ launch.
 | `--web_port PORT` | `8080` | HTTP/WebSocket port (`--renderer web` only) |
 | `--web_bind ADDR` | `127.0.0.1` | Bind address (`--renderer web` only; localhost-only by default) |
 | `--settings_admins A,B` | *(empty)* | Identities (`--username`) allowed to change server-wide settings, such as the saved default theme, from the Settings tool (`bdg/desktop/conf`; see [settings.md](settings.md)). Trusts the client-supplied name — local/single-user use only. Never saved as a default |
-| `--sandbox_root PATH` | *(empty)* | Keep session sandboxes across connections: each client gets `PATH/<username>` (its `--username`, else `default`) instead of a temp directory deleted on disconnect. Trusts the client-supplied name (`local_auth_module`) — local/single-user use only; see [src/auth/DESIGN.md](../src/auth/DESIGN.md) |
-| `--store_dir PATH` | `~/.wish` | Directory holding the persistent server store and per-user stores. The server always trusts a client's `--username` as its identity: identified clients get a user store, clients without one are anonymous. See [docs/persistent-store.md](persistent-store.md) |
+| `--wish_home PATH` | `~/.wish` | Root of every file wish keeps: the server store, one profile per user (`users/<name>/`: user store, sandbox, desktop config), logs, screenshots and traces. Also set by `WISH_HOME`. See [wish-home.md](wish-home.md) |
+| `--persistent_sandboxes MODE` | `auto` | `true`, `false` or `auto`: whether identified clients keep their sandbox across connections in `users/<username>/sandbox`. `auto` turns it on for pipe/terminal transports and a loopback `--host`, off for a network-reachable bind. The server trusts a client's `--username` (`local_auth_module`), so only turn it on for a network bind on a trusted network. Anonymous clients always get a temporary sandbox |
+| `--profiling` / `--profiling_dir PATH` | `false` / *(empty)* | Enable the [profiler](profiling.md); traces go to `<wish_home>/traces`, or `--profiling_dir` (which also enables it). Never saved as a default |
 | `--lang CODE` | *(empty: `en`)* | Default UI language of every session (e.g. `es`); a client's own `--lang` overrides it. See [docs/i18n.md](i18n.md) |
-| `--screenshot_dir PATH` | `wish_screenshots` | Where the server overlay's **Screenshot** button saves PNG files (created when first used) |
+| `--screenshot_dir PATH` | `<wish_home>/screenshots` | Where the server overlay's **Screenshot** button saves PNG files (created when first used) |
 | `--overlay_hotkey KEYS` | `Shift+F1` | Key combination that opens the [server overlay](server-overlay.md) (clients, settings, logs, ...), e.g. `Ctrl+Shift+F12`; empty disables it and its startup notification |
 | `--save_defaults` | `false` | Save the flags given on this command line as the defaults of later runs, then start as usual. See [Saved flag defaults](#saved-flag-defaults) |
 | `--clear_defaults` | `false` | Erase the saved defaults |
@@ -144,7 +146,8 @@ build has none registered).
 | `--run=<name>` | *(empty)* | Launch the named app (required unless `--list`/`--describe`) |
 | `--describe=<name>` | *(empty)* | Print the named app's description and parameters, and exit |
 | `--timeout MS` | `30000` | Connection timeout in milliseconds |
-| `--username NAME` | *(empty)* | Identity sent on connect: selects this client's persistent user store (empty: anonymous, no user store; see [docs/persistent-store.md](persistent-store.md)) and, on a server started with `--sandbox_root`, its persistent sandbox directory (empty: the server's `default`) |
+| `--username NAME` | OS user | Identity sent on connect: selects this client's profile on the server, its user store (see [docs/persistent-store.md](persistent-store.md)) and, on a server with persistent sandboxes, its sandbox. See [wish-home.md](wish-home.md) |
+| `--anonymous` | `false` | Connect without an identity: no user store, and a temporary sandbox deleted on disconnect |
 | `--theme NAME` | `wish` | UI theme preset. Built in: `dark`, `light`, `classic`, `wish` (a more modern theme built on `dark`, the default). Any name is accepted; one the renderer doesn't recognize falls back to `wish` with a logged warning. |
 | `--lang CODE` | *(empty)* | UI language for this session (e.g. `es`): tools load their `i18n/<CODE>.lang` translations, falling back to English. Empty keeps the server's `--lang`. See [docs/i18n.md](i18n.md) |
 
@@ -188,8 +191,8 @@ SDL3, it still supports `--renderer sdl3|web` at runtime exactly like
 | `--height N` | `720` | Initial window height in pixels (`--renderer sdl3` only) |
 | `--renderer NAME` | `web` | Rendering backend: `sdl3`, `web`, or `none` (no window and no web server — for apps run as command line tools, see below) |
 | `--web_port PORT` / `--web_bind ADDR` | `8080` / `127.0.0.1` | Same as `server` (`--renderer web` only) |
-| `--sandbox_root PATH` / `--username NAME` | *(empty)* / `default` | Persist the session sandbox in `PATH/<username>` across runs instead of a temp directory deleted on exit. `--username` (or `default`) also selects the session's user store |
-| `--store_dir PATH` | `~/.wish` | Directory holding the persistent server store and user stores (see [docs/persistent-store.md](persistent-store.md)) |
+| `--username NAME` / `--anonymous` | OS user / `false` | The session's profile: its user store and its sandbox, kept across runs in `<wish_home>/users/<name>/`. `--anonymous` runs without one (temporary sandbox, deleted on exit) |
+| `--wish_home PATH` | `~/.wish` | Root of every file wish keeps (see [wish-home.md](wish-home.md)) |
 | `--lang CODE` | *(empty: `en`)* | UI language (e.g. `es`); see [docs/i18n.md](i18n.md) |
 | `--save_defaults` / `--clear_defaults` | `false` | Save the flags given on this command line as the defaults of later runs, or erase them. Without `--run`, only updates the saved defaults and exits. See [Saved flag defaults](#saved-flag-defaults) |
 
@@ -209,8 +212,8 @@ showing a UI, e.g. [nymph](../modules/bdg/dev/nymph/README.md)'s `render`:
 wish standalone --renderer none --run=nymph -- render chart.nymph -o chart.png
 ```
 
-Nothing is drawn, the log goes to the system temp directory instead of
-`./wish_logs`, and the process exit code is whatever the app set with
+Nothing is drawn, the log goes to `~/.wish/logs/standalone.log` as in every
+mode (never the working directory), and the process exit code is whatever the app set with
 `wish_app_host::set_exit_code()` (0 unless the app reports a failure; the
 same holds for `wish client --run`).
 
@@ -260,7 +263,7 @@ that server's window into a desktop:
 
 The wallpaper, background color, theme, desktop icons, clock formats and
 the Start menu (with its initial pins, desktop icons and power button) come
-from `~/.wish/desktop/desktop.yaml` (`--config`), written with the default
+from `~/.wish/users/<user>/desktop/desktop.yaml` (`--config`), written with the default
 configuration on first run; edit it and the desktop reloads it live.
 Each entry either runs a command or calls a desktop action, so external apps
 can be installed there too. See [desktop-config.md](desktop-config.md).
@@ -268,7 +271,7 @@ can be installed there too. See [desktop-config.md](desktop-config.md).
 Starting a built-in app runs `wish client --run=<app>` as a separate process
 that connects back to the desktop (the `wish-client` beside a standalone
 `wish-desktop` binary). Its output goes to
-`wish_logs/desktop/<entry id>_<n>.log`. Apps started from the desktop are
+`~/.wish/logs/desktop/<entry id>_<n>.log`. Apps started from the desktop are
 closed when the desktop quits. Pins and desktop icons you change, and the
 theme, are saved in the upstream server's [user store](persistent-store.md)
 (entry `wish.desktop`). The desktop connects as `--upstream_username`, which
@@ -291,7 +294,8 @@ are active at once:
 | `--upstream_username NAME` | OS user | Identity the desktop connects upstream as; its user store keeps the desktop settings |
 | `--cmd C` | *(empty)* | Command to spawn (`upstream_transport=term` only) |
 | `--upstream_ca_file`/`--upstream_ca_pem`, `--upstream_server_name`, `--upstream_insecure_skip_verify`, `--upstream_cert_file`/`--upstream_cert_pem`, `--upstream_key_file`/`--upstream_key_pem`, `--upstream_key_password` | — | Upstream TLS client flags, same meaning as `--ca_file`/etc. above (`upstream_transport=tls` only) |
-| `--config PATH` | `~/.wish/desktop/desktop.yaml` | [Desktop configuration file](desktop-config.md); written with the default if missing, reloaded when it changes |
+| `--config PATH` | `~/.wish/users/<user>/desktop/desktop.yaml` | [Desktop configuration file](desktop-config.md); written with the default if missing, reloaded when it changes |
+| `--wish_home PATH` | `~/.wish` | Where the desktop finds its config and writes app logs (see [wish-home.md](wish-home.md)) |
 | `--wallpaper FILE` | *(from the config file)* | Image (png, jpg, ...) shown as the desktop background; overrides the config file's `appearance.wallpaper` |
 | `--timeout MS` | `30000` | Upstream connection timeout in milliseconds |
 | `--with_server` | `false` | Run the wish server in the desktop's own process instead of connecting upstream (see below) |
@@ -307,8 +311,8 @@ connected through the in-memory transport (no socket, pipe or terminal
 hop). The `--upstream_*` transport flags are ignored, and the
 [`wish server` flags](#wish-server) that pick and configure the renderer
 and the server apply instead: `--renderer`, `--title`, `--width`/`--height`,
-`--font_size`, `--web_port`/`--web_bind`, `--theme`, `--lang`, `--store_dir`,
-`--sandbox_root`, `--settings_admins`, ... as do `wish server`'s saved
+`--font_size`, `--web_port`/`--web_bind`, `--theme`, `--lang`, `--wish_home`,
+`--persistent_sandboxes`, `--settings_admins`, ... as do `wish server`'s saved
 defaults (`--save_defaults`). Closing the window, or "Shut down server" in
 the Start menu, ends the desktop too (once confirmed), and quitting the desktop closes the
 window. Only the combined `wish` binary has it (the client-only
@@ -392,7 +396,7 @@ client`/`wish server` connect with no flags, shown above.
 ## Saved flag defaults
 
 `wish server` and `wish standalone` can keep their own defaults in the
-[server store](persistent-store.md) (`<store_dir>/server_store.bison`). Each
+[server store](persistent-store.md) (`<wish_home>/server/store.bison`). Each
 flag resolves in this order:
 
 1. the command line;
@@ -416,12 +420,12 @@ wish standalone --theme light --save_defaults   # saves and exits (no --run)
 
 Every flag of the mode can be saved, except:
 
-- in every mode: `--save_defaults`, `--clear_defaults`, `--store_dir` (it
+- in every mode: `--save_defaults`, `--clear_defaults`, `--wish_home` (it
   locates the store), secrets (flags named `*password` or `*_pem`, e.g.
   `--key_password`, `--cert_pem`) and gflags' own flags (`--help`,
   `--flagfile`, ...);
-- the debug and security switches: `--debugger`, `--profiling_dir`,
-  `--profiling_autostart`, `--allow_absolute_paths`;
+- the debug and security switches: `--debugger`, `--profiling`,
+  `--profiling_dir`, `--profiling_autostart`, `--allow_absolute_paths`;
 - in `standalone` only: `--run`, `--list`, `--describe`, and the rejected
   transport flags.
 
@@ -430,7 +434,7 @@ Every flag of the mode can be saved, except:
 | `server` | `wish.cli.server` |
 | `standalone` | `wish.cli.standalone` |
 
-The defaults live under `--store_dir`, so pass the same `--store_dir` when
+The defaults live under `--wish_home`, so pass the same `--wish_home` when
 saving and when running. A saved value that is no longer valid for its flag
 is skipped with a warning.
 

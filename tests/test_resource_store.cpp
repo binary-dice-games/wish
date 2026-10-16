@@ -14,27 +14,7 @@
 #include <unordered_map>
 #include <vector>
 
-#ifndef _WIN32
-#include <unistd.h>
-#endif
-
 using bdg::wish::resource_store::extract_to;
-
-namespace {
-
-// On POSIX, a process running as root bypasses regular file permission
-// checks (including the owner-write bit extract_to() clears), so it can
-// reopen and rewrite a file it just marked read-only. Windows' read-only
-// file attribute has no such privileged-user bypass.
-bool can_bypass_read_only_permissions() {
-#ifndef _WIN32
-  return geteuid() == 0;
-#else
-  return false;
-#endif
-}
-
-} // namespace
 
 namespace {
 
@@ -131,23 +111,38 @@ TEST(ResourceStore, ExtractToMarksFilesReadOnly) {
 
 // ── extract_to — repeated call ────────────────────────────────────────────────
 
-TEST(ResourceStore, ExtractToSecondCallReturnsFalseButPreservesExistingFiles) {
+TEST(ResourceStore, ExtractToAgainKeepsCurrentFilesAndReportsTheirCrc32s) {
+  // A persistent sandbox is re-populated on every connect.
   auto dir = make_temp_dir("repeat");
-  ASSERT_TRUE(extract_to(dir));
+  std::unordered_map<std::string, uint32_t> first;
+  ASSERT_TRUE(extract_to(dir, &first));
 
-  // Files are already read-only; miniz cannot reopen them for writing, so
-  // the second call reports failure -- but must not delete or corrupt what
-  // is already on disk. A privileged (root) process bypasses that
-  // permission check, so it can legitimately get `true` back here instead.
-  const bool second_call_ok = extract_to(dir);
-  if (!can_bypass_read_only_permissions())
-    EXPECT_FALSE(second_call_ok);
-
+  std::unordered_map<std::string, uint32_t> second;
+  EXPECT_TRUE(extract_to(dir, &second));
+  EXPECT_EQ(second, first);
   for (const char* rel : kExpectedFiles) {
     auto path = dir / rel;
-    EXPECT_TRUE(std::filesystem::exists(path)) << "missing after re-extract: " << rel;
     EXPECT_GT(std::filesystem::file_size(path), 0U) << "zero-size after re-extract: " << rel;
+    EXPECT_FALSE(is_owner_writable(path)) << "writable after re-extract: " << rel;
   }
+
+  std::filesystem::remove_all(dir);
+}
+
+TEST(ResourceStore, ExtractToAgainReplacesAStaleReadOnlyFile) {
+  auto dir = make_temp_dir("stale");
+  std::unordered_map<std::string, uint32_t> crc32s;
+  ASSERT_TRUE(extract_to(dir, &crc32s));
+  const auto path = dir / "icons/file.png";
+  const auto size = std::filesystem::file_size(path);
+  std::filesystem::permissions(path, std::filesystem::perms::owner_write, std::filesystem::perm_options::add);
+  { std::ofstream(path, std::ios::binary | std::ios::trunc) << "stale"; }
+  std::filesystem::permissions(path, std::filesystem::perms::owner_write, std::filesystem::perm_options::remove);
+
+  EXPECT_TRUE(extract_to(dir));
+  EXPECT_EQ(std::filesystem::file_size(path), size);
+  EXPECT_FALSE(is_owner_writable(path));
+  EXPECT_FALSE(std::filesystem::exists(dir / "icons/file.png.extracting"));
 
   std::filesystem::remove_all(dir);
 }

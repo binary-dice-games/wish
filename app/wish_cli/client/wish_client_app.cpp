@@ -31,9 +31,10 @@ DEFINE_string(run, "", "Name of the embedded application to run");
 DEFINE_string(describe, "", "Print name, description, and parameters for a specific embedded application and exit");
 DEFINE_int32(timeout, 30000, "Connection timeout in milliseconds");
 DEFINE_string(username, "",
-              "Identity sent to the server on connect: selects this client's persistent user store "
-              "(empty: anonymous, no user store) and, with a server started with --sandbox_root, its "
-              "persistent sandbox directory (empty: the server's default)");
+              "Identity sent to the server on connect: selects this client's profile (user store and, "
+              "on a local server, persistent sandbox) under the wish home (empty: the logged-in OS user)");
+DEFINE_bool(anonymous, false,
+            "Connect without an identity: no user store, and a temporary sandbox deleted on disconnect");
 
 namespace bdg::wish {
 
@@ -251,8 +252,11 @@ void wish_client_app::on_connect_params(bison::dynamic& params) const {
   // paths that skip straight to run_with_transport().
   bison::app::client_app::on_connect_params(params);
   params["timeout_ms"_key] = int32_t{FLAGS_timeout};
-  if (!FLAGS_username.empty())
+  if (FLAGS_anonymous)
+    params["anonymous"_key] = true;
+  else if (!FLAGS_username.empty())
     params["username"_key] = FLAGS_username;
+  wish::client::apply_default_identity(params);
   // Which app this connection runs, so a `wish desktop` in between can tell
   // its clients apart (taskbar icons, running indicators). A plain server
   // ignores it.

@@ -68,10 +68,10 @@ flags given on the command line or in the environment, lets
 `--save_defaults` save only command-line flags, and keeps standalone's
 transport-flag rejection working.
 
-The saved defaults live in the server store (`<store_dir>/server_store.bison`,
+The saved defaults live in the server store (`<wish_home>/server/store.bison`,
 entries `wish.cli.server` / `wish.cli.standalone`) rather than a config file,
 so server-side code can read them like any other server-store entry. The
-store is read after the command line is parsed, since `--store_dir` locates
+store is read after the command line is parsed, since `--wish_home` locates
 it, and before `server_app::run()` builds the transport. `load_cli_config()`
 closes its store instance before the server opens its own. `server_app::run()`
 parses argv again, so `wish_server_app::run()` parses a copy first (gflags
@@ -308,10 +308,11 @@ The split follows where the information lives:
 The desktop's settings -- `appearance` (wallpaper, background, theme,
 desktop icons), `taskbar` (clock formats) and `start_menu` -- are sections of
 a per-user file,
-`~/.wish/desktop/desktop.yaml` (`--config`; format in
-[docs/desktop-config.md](../docs/desktop-config.md)). It is a plain file next
-to the persistent stores (`default_store_dir()`, in `wish_client` so the
-client-only `wish-desktop` can use it), not a store entry, so users can edit
+`~/.wish/users/<user>/desktop/desktop.yaml` (`--config`; format in
+[docs/desktop-config.md](../docs/desktop-config.md)), in the profile of the
+user the desktop connects as. It is a plain file in the wish home
+(`wish_home::user_desktop_config()`, in `wish_client` so the client-only
+`wish-desktop` can use it), not a store entry, so users can edit
 it with any editor, and the server store stays unreachable over RMI. The
 top level is a map of sections so later settings can be added without a
 format change; unknown sections and settings are ignored, and missing ones
@@ -492,7 +493,7 @@ for each child, `exit_cb` to reap it, `uv_process_kill` to terminate it,
 code. Each child gets this process's environment plus
 `WISH_TRANSPORT/HOST/PORT/NAME` for the downstream side (a wildcard bind
 host becomes loopback) and writes stdout/stderr to
-`wish_logs/desktop/<entry id>_<n>.log`, never to the desktop's terminal.
+`<wish_home>/logs/desktop/<entry id>_<n>.log`, never to the desktop's terminal.
 The entry's `env` goes on top and its `cwd` is applied. The entry point sets
 what `{wish_client}` expands to: `<wish> client` in the combined `wish`
 binary, the sibling `wish-client` for the standalone `wish-desktop`. `wish_desktop_app::wait_for_shutdown()`

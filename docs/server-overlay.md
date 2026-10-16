@@ -41,11 +41,11 @@ runs and can be changed on the Settings page too.
 
 | Page | Shows |
 |------|-------|
-| **Overview** | Tiles: uptime, connected clients and their windows, the server's memory, the frame rate. A **Server** card: version, endpoint, renderer, hotkey, log file, store directory, sandboxes, settings admins. A **This machine** card: host name, OS, user, CPUs, load average, process id, memory in use. The last clients that connected. |
+| **Overview** | Tiles: uptime, connected clients and their windows, the server's memory, the frame rate. A **Server** card: version, endpoint, renderer, hotkey, log file, [wish home](wish-home.md), sandboxes, settings admins. A **This machine** card: host name, OS, user, CPUs, load average, process id, memory in use. The last clients that connected. |
 | **Clients** | One row per session: identity (`admin` and `store` badges), session id, language, window titles, time connected, and an **Open** button for its sandbox folder. |
-| **Performance** | The last two minutes, one point per second: frame time (the CPU time to build and submit a frame for every client; average and slowest), frames drawn per second, the server's CPU use (100 % = one core) and memory, and the number of clients. A **Profiler** card starts and stops a [Perfetto trace](profiling.md) when the server runs with `--profiling_dir`, and shows the newest trace file. |
-| **Settings** | An editor for the described settings ([settings.md](settings.md)) of the **server store** and of each **user store**: users connected now and users with a store file. A sidebar of categories, a search box, an editor per type (switch, slider, drop-down, color, text), **Reset** to the default, and a *restart* badge on settings that apply at the next start. Changes are saved right away. |
-| **Logs** | The end of `wish_logs/server.log` (the last 2000 lines), refreshed live, with a filter, **Follow**, **Copy** and **Open file**. Errors are red, warnings orange. Nothing is logged unless the server runs with `--verbose` (see [cli.md](cli.md#log-verbosity)). |
+| **Performance** | The last two minutes, one point per second: frame time (the CPU time to build and submit a frame for every client; average and slowest), frames drawn per second, the server's CPU use (100 % = one core) and memory, and the number of clients. A **Profiler** card starts and stops a [Perfetto trace](profiling.md) when the server runs with `--profiling`, and shows the newest trace file. |
+| **Settings** | An editor for the described settings ([settings.md](settings.md)) of the **server store** and of each **user store**: users connected now and users with a profile under the wish home. A sidebar of categories, a search box, an editor per type (switch, slider, drop-down, color, text), **Reset** to the default, and a *restart* badge on settings that apply at the next start. Changes are saved right away. |
+| **Logs** | The end of `~/.wish/logs/server.log` (the last 2000 lines), refreshed live, with a filter, **Follow**, **Copy** and **Open file**. Errors are red, warnings orange. Nothing is logged unless the server runs with `--verbose` (see [cli.md](cli.md#log-verbosity)). |
 | **About** | Version, links to the project on GitHub, the documentation and the issue tracker, and the keyboard shortcuts. |
 
 The overlay is the server's local operator, so its Settings page can change
@@ -58,12 +58,13 @@ The bottom bar has:
 
 - **Screenshot**: saves the clients' windows, without the overlay or the
   notifications, as `wish-YYYYMMDD-HHMMSS.png` in `--screenshot_dir`
-  (default `wish_screenshots`, beside `wish_logs`). A notification gives
+  (default `~/.wish/screenshots`). A notification gives
   the file's path; the Overview's Server card has an **Open** button for the
   folder. With `--renderer web` the browser showing the server takes the
   picture, so one must be open (and in the foreground).
-- **Open sandbox folder**: the `--sandbox_root` directory, or, without one,
-  a menu of the connected clients' temporary sandboxes.
+- **Open sandbox folder**: a menu of the connected clients' sandboxes
+  (`users/<identity>/sandbox` under the wish home for identified clients
+  with persistent sandboxes, a temporary one otherwise).
 - **Open server log** and **Logs folder**.
 - **GitHub** and **Documentation**.
 - **Shut down server**, after a confirmation that says how many clients

@@ -87,13 +87,13 @@ void standalone::on_session_created(bison::rmi::context& ctx) {
     auto sess = context_wlock{*context_};
     sess->emit_event = ctx.emit_event;
     sess->allow_absolute_paths = allow_absolute_paths_;
-    if (!persistent_sandbox_root_.empty() && is_safe_sandbox_identity(persistent_identity_))
-      sess->adopt_persistent_resource_dir(persistent_sandbox_root_ / persistent_identity_);
+    const std::string identity = normalize_identity(user_identity_);
+    if (persistent_sandboxes_ && !identity.empty())
+      sess->adopt_persistent_resource_dir(home().user_sandbox_dir(identity));
     sess->file_service = file_service::instantiate(sess->resource_dir);
     sess->style_service = style_service::instantiate();
     sess->logger_service = logger_;
     sess->server_store = stores_->server_store();
-    const std::string& identity = !user_identity_.empty() ? user_identity_ : persistent_identity_;
     sess->identity = identity;
     sess->settings_admin = true; // one local user, who owns the server store too
     if (auto store = stores_->user_store(identity)) {
