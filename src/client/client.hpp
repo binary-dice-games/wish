@@ -459,6 +459,32 @@ class client : public bison::rmi::client {
   /// @return Future resolving to whether it was still on screen.
   std::future<bool> dismiss_notification(uint64_t id);
 
+  // ── Media playback ────────────────────────────────────────────────────────
+  //
+  // Audio and video played by the server (see docs/media.md): the server
+  // decodes the file and drives its own sound card, and shows video frames
+  // in `Video` widgets; the client only sends commands and needs no media
+  // library.
+
+  /// @brief True when the server plays media (built with FFmpeg).
+  bool has_media() const noexcept {
+    return media_proxy_ != nullptr;
+  }
+
+  /**
+   * @brief Open @p path, a file already in the session sandbox (uploaded
+   *        with upload_file()/sync_resource_package()), as player @p name.
+   *
+   * Absolute paths, `..` escapes and URLs are refused. Opening a name that
+   * is already open replaces that player. A session has at most 8.
+   *
+   * @return Future resolving to the player. Throws through the future when
+   *         has_media() is false, the path is refused or missing, or the file
+   *         is not playable.
+   */
+  std::future<media_player> open_media(
+      const std::string& name, const std::string& path, const media_options& options = {});
+
   // ── User store ────────────────────────────────────────────────────────────
   //
   // A persistent store of named bison objects private to this session's
@@ -666,6 +692,9 @@ class client : public bison::rmi::client {
   // Unset when the server has no __WishNotifications service. See
   // has_notifications().
   std::optional<bison::rmi::proxy::dynamic> notifications_proxy_;
+  // Null when the server plays no media; shared with every media_player so
+  // close() still works from a copy.
+  std::shared_ptr<bison::rmi::proxy::dynamic> media_proxy_;
   // Serializes describe_*()'s read-merge-write of schema entries.
   bison::synchronized<bool> describe_lock_{false};
 

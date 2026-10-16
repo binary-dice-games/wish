@@ -530,13 +530,32 @@ Displays an image previously uploaded via the file service; no events.
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `src` | `string` | `""` (required) | Resource file name in the session sandbox folder. |
+| `src` | `string` | `""` (required) | Resource file name in the session sandbox folder, or `"media://<player>"` to show the current video frame of a media player (see [media.md](media.md)). |
 | `width` | `int32` | `0` | Display width; `0` uses the image's natural width (0–16384). |
 | `height` | `int32` | `0` | Display height; `0` uses the image's natural height (0–16384). |
 | `tint` | `string` | `""` | Optional `"#RRGGBBAA"`/`"#RRGGBB"` hex color multiplied over the whole image; empty draws it unmodified. |
 | `tint_light` | `string` | `""` | Overrides `tint` while the session's active theme is light-based; re-evaluated every frame. Ignored when empty. |
 | `tint_dark` | `string` | `""` | Same as `tint_light`, used instead while the active theme is dark-based. Ignored when empty. |
 | `badge` | `string` | `""` | Optional `"#RRGGBB"` color: draws a rounded square of that color (`width` x `height`) with the image inset on it, like the category icons of macOS System Settings. Combine with a white `tint`. |
+
+#### `Video`
+Shows the current frame of a media player playing on the server, opened by
+the client with `open_media(name, path)` (see [media.md](media.md)). Emits
+`clicked` when clicked (e.g. to toggle play/pause). Draws a black box until
+the player has a frame, for an audio-only player, and on a server built
+without media support.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `player` | `string` | `""` (required) | Name of the session's media player. |
+| `width` | `int32` | `0` | Display width; `0` uses the video's natural width (320 before the first frame), `-1` fills the available width. |
+| `height` | `int32` | `0` | Display height; `0` follows the width and the video's aspect ratio, `-1` fills the available height. |
+| `keep_aspect` | `bool` | `true` | Letterbox the frame inside `width` x `height` instead of stretching it. |
+| `tint` | `string` | `""` | Optional `"#RRGGBBAA"`/`"#RRGGBB"` color multiplied over the video. |
+
+```json
+{ "type": "Video", "player": "intro", "width": -1, "height": 360 }
+```
 
 #### `Separator` / `SeparatorText`
 Visual dividers; no events.

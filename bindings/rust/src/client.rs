@@ -13,6 +13,7 @@ use std::panic::AssertUnwindSafe;
 use std::ptr;
 
 use crate::key::{key, key_or_zero};
+use crate::media::{MediaOptions, MediaPlayer};
 use crate::proxy::{Future, Proxy, RmiError};
 use crate::sys;
 use crate::value::{BisonError, Value};
@@ -65,7 +66,7 @@ fn error_message(code: i32) -> &'static str {
     }
 }
 
-fn check(
+pub(crate) fn check(
     rc: sys::wish_error,
     context: &str,
     client: sys::wish_client_handle,
@@ -85,7 +86,7 @@ fn last_error_string(client: sys::wish_client_handle) -> Option<String> {
     Some(unsafe { CStr::from_ptr(p).to_string_lossy().into_owned() })
 }
 
-fn cstr(s: &str) -> CString {
+pub(crate) fn cstr(s: &str) -> CString {
     CString::new(s).unwrap_or_else(|_| CString::new("").unwrap())
 }
 
@@ -853,6 +854,45 @@ impl Client {
             _ => root.get_string("v").map(SettingValue::Text),
         }
         .unwrap_or(SettingValue::None))
+    }
+
+    // ── Media playback ───────────────────────────────────────────────────
+
+    /// True if the server plays media (it was built with FFmpeg).
+    pub fn has_media(&self) -> Result<bool, WishError> {
+        let mut avail: std::os::raw::c_int = 0;
+        check(
+            unsafe { sys::wish_media_available(self.handle, &mut avail) },
+            "client.has_media",
+            self.handle,
+        )?;
+        Ok(avail != 0)
+    }
+
+    /// Opens `path`, a file already uploaded to the session sandbox, as
+    /// player `name`. The server plays it; show its video with a `Video`
+    /// widget whose `player` is `name`. Absolute paths, `..` escapes and
+    /// URLs are refused. Fails with `WISH_ERR_UNAVAILABLE` when the server
+    /// plays no media.
+    pub fn open_media(&self, name: &str, path: &str, options: &MediaOptions) -> Result<MediaPlayer, WishError> {
+        let mut out: sys::wish_media_handle = ptr::null_mut();
+        let flags = if options.autoplay { sys::WISH_MEDIA_AUTOPLAY } else { 0 }
+            | if options.loop_ { sys::WISH_MEDIA_LOOP } else { 0 };
+        check(
+            unsafe {
+                sys::wish_media_open(
+                    self.handle,
+                    cstr(name).as_ptr(),
+                    cstr(path).as_ptr(),
+                    flags,
+                    options.volume,
+                    &mut out,
+                )
+            },
+            "client.open_media",
+            self.handle,
+        )?;
+        Ok(MediaPlayer::new(out, self.handle, name))
     }
 
     // ── Notifications ────────────────────────────────────────────────────

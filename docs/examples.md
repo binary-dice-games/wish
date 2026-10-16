@@ -278,3 +278,40 @@ would, run its instrumented test suite instead:
 | Example | Step | Description |
 |---------|------|-------------|
 | `socket_server` / `socket_client` | Step 18 | Server listening on TCP port 7070; client connects over the network. Linux + MSYS2. |
+
+## Media player (`examples/media_player/`)
+
+### What it demonstrates
+
+Server-side media playback ([media.md](media.md)) in one binary. The
+client:
+
+- uploads a local audio or video file to its session sandbox
+  (`upload_file()`, streamed);
+- opens it with `open_media("movie", ...)`, with `autoplay` and an optional
+  `loop`;
+- shows it in a `Video` widget. Clicking the picture toggles play/pause;
+- wires Play / Pause / Stop buttons, a seek bar (`SliderFloat` → `seek()`)
+  and a volume slider (`set_volume()`);
+- polls `status()` four times a second for the position label;
+- uses `on_ended()` and `on_error()`.
+
+The server decodes the file and plays its sound. The example itself links
+no media library. It is only built when the server has media support
+(`WISH_ENABLE_MEDIA`, FFmpeg installed; see
+[building.md](building.md#media-playback-ffmpeg)).
+
+### Running
+
+```sh
+./build/examples/media_player --file=movie.mp4
+./build/examples/media_player --file=song.mp3 --loop
+./build/examples/media_player --file=movie.mp4 --renderer web   # then open the printed URL
+```
+
+| Flag | Effect |
+|------|--------|
+| `--file <path>` | Audio or video file to play (required). |
+| `--loop` | Restart from the beginning at the end. |
+| `--verbose` / `-v` | Print upload/open/end messages to `stderr`. |
+| `--renderer sdl3\|web` | Window or browser renderer. With `web`, keep videos small: frames go to the browser as raw RGBA. |

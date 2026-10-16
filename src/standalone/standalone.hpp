@@ -237,6 +237,15 @@ class standalone : public bison::rmi::standalone {
   /// @copydoc bdg::wish::client::notify
   std::future<uint64_t> notify(const notification& n);
 
+  /// @copydoc bdg::wish::client::has_media
+  bool has_media() const noexcept {
+    return media_proxy_ != nullptr;
+  }
+
+  /// @copydoc bdg::wish::client::open_media
+  std::future<media_player> open_media(
+      const std::string& name, const std::string& path, const media_options& options = {});
+
   /// @copydoc bdg::wish::client::dismiss_notification
   std::future<bool> dismiss_notification(uint64_t id);
 
@@ -390,6 +399,7 @@ class standalone : public bison::rmi::standalone {
   // Unset for an anonymous session -- see set_user_identity().
   std::optional<bison::rmi::proxy::dynamic> user_store_proxy_;
   std::optional<bison::rmi::proxy::dynamic> notifications_proxy_;
+  std::shared_ptr<bison::rmi::proxy::dynamic> media_proxy_;
   // Serializes describe_*()'s read-merge-write of schema entries.
   bison::synchronized<bool> describe_lock_{false};
 };

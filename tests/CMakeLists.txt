@@ -165,6 +165,12 @@ if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
   wish_add_test(test_sdl3_renderer test_sdl3_renderer.cpp)
 endif()
 
+if(WISH_ENABLE_MEDIA)
+  wish_add_test(test_media test_media.cpp)
+  # media_test_files.hpp encodes its test video with libavcodec directly.
+  target_link_libraries(test_media PRIVATE FFMPEG::FFMPEG)
+endif()
+
 if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3 AND WISH_ENABLE_AUTOMATION)
   wish_add_test(test_sdl3_automation test_sdl3_automation.cpp)
   # Parses query_tree()'s TREE_SNAPSHOT-shaped JSON reply, same as

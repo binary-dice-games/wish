@@ -7,6 +7,7 @@
 #pragma once
 
 #include <client/app_registry.hpp>
+#include <client/media_player.hpp>
 #include <client/resource_sync.hpp>
 #include <context/settings_schema.hpp>
 #include <server/notifications.hpp>
@@ -149,6 +150,25 @@ class wish_app_host {
   virtual std::future<bool> dismiss_notification(uint64_t id) {
     (void)id;
     return unavailable<bool>("notifications");
+  }
+
+  // ── Media playback ──────────────────────────────────────────────────────
+  //
+  // Audio/video played by the server from the session sandbox. Not pure: a
+  // host without it inherits these defaults, which report it unavailable.
+
+  /// @copydoc bdg::wish::client::has_media
+  virtual bool has_media() const {
+    return false;
+  }
+
+  /// @copydoc bdg::wish::client::open_media
+  virtual std::future<media_player> open_media(
+      const std::string& name, const std::string& path, const media_options& options = {}) {
+    (void)name;
+    (void)path;
+    (void)options;
+    return unavailable<media_player>("media playback");
   }
 
   // ── User store ──────────────────────────────────────────────────────────

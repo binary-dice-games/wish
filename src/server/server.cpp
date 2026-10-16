@@ -18,6 +18,10 @@
 
 #include "ui/ui_template.hpp"
 
+#ifdef WISH_MEDIA_ENABLED
+#include <media/media_service.hpp>
+#endif
+
 #include <chrono>
 #include <iomanip>
 #include <memory>
@@ -105,6 +109,10 @@ void server::on_session_created(bison::rmi::context& ctx) {
     // Anonymous until on_authenticated() names the session.
     s.notification_service = notification_service::instantiate(s.notifications, {});
   }
+#ifdef WISH_MEDIA_ENABLED
+  if (renderer_)
+    s.media_service = media::media_service::instantiate(s.resource_dir, s.allow_absolute_paths);
+#endif
 #ifdef WISH_AUTOMATION_ENABLED
   if (renderer_) {
     if (auto* backend = renderer_->as_automation_backend())
@@ -130,6 +138,14 @@ void server::on_session_destroyed(bison::rmi::context& ctx) {
     on_session_destroyed(s);
   } catch (...) {
   }
+#ifdef WISH_MEDIA_ENABLED
+  // Silence the session's players now; the render loop's snapshot may keep
+  // the context itself alive a little longer.
+  if (s.media_service) {
+    for (const auto& name : s.media_service->names())
+      s.media_service->close(name);
+  }
+#endif
 }
 
 void server::on_authenticated(bison::rmi::context& ctx, const std::string& identity) {
@@ -157,6 +173,10 @@ void server::on_authenticated(bison::rmi::context& ctx, const std::string& ident
   // find_singleton_service()/on_create_object() points at the persistent
   // directory instead of the temp one on_session_created() set up.
   s.file_service = file_service::instantiate(s.resource_dir);
+#ifdef WISH_MEDIA_ENABLED
+  if (s.media_service)
+    s.media_service->set_resource_dir(s.resource_dir);
+#endif
 }
 
 bison::dynamic_ptr server::on_create_object(bison::rmi::context& ctx, bison::key_t ns, bison::key_t klass) {
@@ -164,7 +184,7 @@ bison::dynamic_ptr server::on_create_object(bison::rmi::context& ctx, bison::key
   // detail::current_context already points at.
   auto& s = static_cast<context&>(ctx);
 
-  if (auto svc = detail::find_singleton_service(s, klass))
+  if (auto svc = detail::find_singleton_service(s, klass, &ctx))
     return svc;
 
   // form/ui_template hold a sync_context_ptr long-term (e.g. so destructors
@@ -242,6 +262,13 @@ void server::render_loop() {
         BISON_TRACE_SCOPE("tick");
         renderer_->tick(sessions_snapshot);
       }
+
+#ifdef WISH_MEDIA_ENABLED
+      // Every iteration, not only on drawn frames: new video frames and
+      // player events (an audio-only player ending) mark their session
+      // dirty, which is what schedules the frame that shows them.
+      media::pump_sessions(*renderer_, sessions_snapshot);
+#endif
 
       // render_on_demand() renderers don't treat routine poll_events()
       // activity (WS traffic, resize, ...) as a reason to draw -- only

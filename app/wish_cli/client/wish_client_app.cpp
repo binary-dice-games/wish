@@ -202,6 +202,17 @@ std::future<bool> wish_client_app::dismiss_notification(uint64_t id) {
   return wish_client_->dismiss_notification(id);
 }
 
+bool wish_client_app::has_media() const {
+  return wish_client_ && wish_client_->has_media();
+}
+
+std::future<bdg::wish::media_player> wish_client_app::open_media(
+    const std::string& name, const std::string& path, const bdg::wish::media_options& options) {
+  if (!wish_client_)
+    throw std::runtime_error("client not connected");
+  return wish_client_->open_media(name, path, options);
+}
+
 bool wish_client_app::has_user_store() const {
   return wish_client_ && wish_client_->has_user_store();
 }

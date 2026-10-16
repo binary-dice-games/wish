@@ -42,4 +42,9 @@ wish_error wish_sync_resource_package_shim(
     wish_resource_sync_fn fn,
     uintptr_t userdata);
 
+wish_error wish_media_on_event_shim(
+    wish_media_handle media,
+    wish_media_event_fn fn,
+    uintptr_t userdata);
+
 #endif /* WISH_GO_SHIM_H */

@@ -62,6 +62,13 @@ class automation_service;
 using automation_service_ptr = std::shared_ptr<automation_service>;
 #endif
 
+#ifdef WISH_MEDIA_ENABLED
+namespace media {
+class media_service; // defined in <media/media_service.hpp>
+using media_service_ptr = std::shared_ptr<media_service>;
+} // namespace media
+#endif
+
 /// @brief Number of consecutive render passes `context::dirty` requests by
 /// default whenever something marks a session dirty.
 ///
@@ -233,6 +240,14 @@ struct context : public bison::rmi::context {
 
   /// When the session was created (the client connected).
   std::chrono::system_clock::time_point connected_at{std::chrono::system_clock::now()};
+
+#ifdef WISH_MEDIA_ENABLED
+  /// The `__WishMedia` RMI service: the session's audio/video players,
+  /// playing files from `resource_dir` (see `media::media_service`). Set by
+  /// `server::on_session_created()` / `standalone::on_session_created()`;
+  /// null in a context built without a server (tests).
+  media::media_service_ptr media_service;
+#endif
 
 #ifdef WISH_AUTOMATION_ENABLED
   /// Automation service instance; only set (by `server::on_session_created`/
@@ -479,14 +494,20 @@ bool is_read_only_op(bison::key_t op);
 /// objects, so `on_create_object` must return the existing service instance
 /// instead of constructing a new one.
 ///
-/// @param s     Session owning the singleton services.
-/// @param klass Requested class key.
+/// @param s       Session owning the singleton services.
+/// @param klass   Requested class key.
+/// @param rmi_ctx The RMI context whose object table the dispatch uses (the
+///                session itself on a server, the standalone's own context
+///                otherwise); services that create RMI objects of their own
+///                (`__WishMedia`'s players) file them there. May be null.
 /// @return The singleton's `dynamic_ptr`, or an empty `dynamic_ptr` if
 ///         @p klass is not one of the singleton protocol classes (or the
 ///         session has no such service attached).
 /// @throws std::runtime_error for `__WishUserStore` on an anonymous session,
-///         and for `__WishAutomation` when the renderer doesn't support it.
-bison::dynamic_ptr find_singleton_service(const context& s, bison::key_t klass);
+///         for `__WishAutomation` when the renderer doesn't support it, and
+///         for `__WishMedia` on a server without media support.
+bison::dynamic_ptr find_singleton_service(
+    const context& s, bison::key_t klass, bison::rmi::context* rmi_ctx = nullptr);
 
 /// @brief Inject session context into a freshly created form/ui_template.
 ///

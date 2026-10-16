@@ -57,3 +57,10 @@ wish_error wish_sync_resource_package_shim(
     uintptr_t userdata) {
   return wish_sync_resource_package(client, name, local_zip_path, dest_path, fn, (void*)userdata);
 }
+
+wish_error wish_media_on_event_shim(
+    wish_media_handle media,
+    wish_media_event_fn fn,
+    uintptr_t userdata) {
+  return wish_media_on_event(media, fn, (void*)userdata);
+}

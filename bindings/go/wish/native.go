@@ -77,6 +77,9 @@ extern void goProxyEventTrampoline(bison_handle params, void* user);
 // enum as int).
 extern void goResourceSyncTrampoline(wish_client_handle client, char* name, int state,
     uint64_t transferred, uint64_t total, char* errMsg, void* userdata);
+// Same ABI as wish_media_event_fn (cgo exports drop const).
+extern void goMediaEventTrampoline(wish_media_handle media, int32_t event, int32_t state,
+    char* message, void* userdata);
 */
 import "C"
 
@@ -169,4 +172,31 @@ func goResourceSyncTrampoline(
 	}
 	defer func() { _ = recover() }()
 	fn(status)
+}
+
+// goMediaEventTrampoline is the C-callable wish_media_event_fn for
+// MediaPlayer.OnEvent; `userdata` is a runtime/cgo.Handle resolving to the
+// registered callback, deleted by MediaPlayer.Close (or the next OnEvent).
+// A panic in the callback is recovered and swallowed (see
+// goProxyEventTrampoline).
+//
+//export goMediaEventTrampoline
+func goMediaEventTrampoline(
+	media C.wish_media_handle,
+	event C.int32_t,
+	state C.int32_t,
+	message *C.char,
+	userdata unsafe.Pointer,
+) {
+	h := cgo.Handle(uintptr(userdata))
+	fn, ok := h.Value().(func(MediaEvent))
+	if !ok || fn == nil {
+		return
+	}
+	ev := MediaEvent{Kind: MediaEventKind(event), State: MediaState(state)}
+	if message != nil {
+		ev.Message = C.GoString(message)
+	}
+	defer func() { _ = recover() }()
+	fn(ev)
 }

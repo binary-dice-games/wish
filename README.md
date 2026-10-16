@@ -12,6 +12,7 @@ A remote UI framework built on [bison](https://github.com/binary-dice-games/biso
 - **Multiple transports** — TCP, TLS-secured TCP, named pipe/Unix socket, an interactive terminal hop, or in-process (no serialization) for single-binary demos.
 - **Per-session sandboxing** — isolated object tree, template registry, and file-service resource folder per connected client.
 - **Desktop mode** — `wish desktop` runs several apps as windows on one Windows/macOS-like desktop: wallpaper, taskbar, a Start menu configured from a YAML file, pinned apps, tray clock. One desktop per machine, on a fixed local endpoint, so services can show a UI whenever it runs (`run_on_desktop()`). `wish desktop --with_server` runs the server in the same process, so one command starts everything. See [docs/cli.md](docs/cli.md#wish-desktop) and [docs/desktop-config.md](docs/desktop-config.md).
+- **Media playback** — clients play audio and video files from their sandbox on the server (FFmpeg + miniaudio, server-side only), shown in a `Video` widget; every client API and binding can drive it. See [docs/media.md](docs/media.md).
 - **Server overlay** — a Steam-like overlay over every app (Shift+F1): server and machine info, connected clients, performance graphs and the profiler, a settings editor for the server and user stores, the live log, screenshots, sandbox/log shortcuts and shutdown; plus toast notifications that server code and apps (every client API) can post. See [docs/server-overlay.md](docs/server-overlay.md).
 - **Automation-ready** — an optional query/screenshot/input-injection API lets Playwright (or an AI agent) drive and introspect a running UI like a browser page; the SDL3 renderer gets the same capabilities natively over the C ABI, no browser required.
 - **C++, Python, C#, Rust, Go, and Android clients** — a native C++ API, a header-only C++ binding (`bindings/cpp/`, C ABI only, no bison/wish source to compile), plus Python/C#/Rust/Go/Java bindings, all layered on the same bison RMI proxy semantics.
@@ -156,6 +157,7 @@ dirs under their own `private/apps/<tool>/` directory
 | [docs/server-overlay.md](docs/server-overlay.md) | The `wish server` overlay (Shift+F1): its pages and actions, `--overlay_hotkey`/`--screenshot_dir`, and posting toast notifications from server code and from apps |
 | [docs/settings.md](docs/settings.md) | Describing app settings (category, label, type, icon, ...) for the Settings tool (`bdg/desktop/conf`); server settings and admins |
 | [docs/persistent-store.md](docs/persistent-store.md) | Server store and per-user store: persisting tool data across sessions, identities, security model, per-language API |
+| [docs/media.md](docs/media.md) | Server-side audio/video playback: `open_media()` players, the `Video` widget, sandbox rules, events, FFmpeg build requirements |
 | [docs/profiling.md](docs/profiling.md) | Capturing a Perfetto trace of the server render loop/layout engine via bison's profiler, and viewing it at ui.perfetto.dev |
 | [DESIGN.md](DESIGN.md) | Architecture, key abstractions, object model, and design decisions |
 | [CHANGELOG.md](CHANGELOG.md) | User-facing changes between releases |

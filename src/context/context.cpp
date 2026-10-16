@@ -24,6 +24,10 @@
 #include <automation/automation_service.hpp>
 #endif
 
+#ifdef WISH_MEDIA_ENABLED
+#include <media/media_service.hpp>
+#endif
+
 #include <ui/forms/form.hpp>
 
 #include "ui/ui_elements/object_inspector.hpp"
@@ -35,7 +39,7 @@ using namespace bison;
 
 namespace detail {
 
-bison::dynamic_ptr find_singleton_service(const context& s, bison::key_t klass) {
+bison::dynamic_ptr find_singleton_service(const context& s, bison::key_t klass, bison::rmi::context* rmi_ctx) {
   if (klass == "__WishFileSystem"_key && s.file_service)
     return dynamic_ptr{std::static_pointer_cast<dynamic>(s.file_service)};
   if (klass == "__WishStyle"_key && s.style_service)
@@ -57,6 +61,21 @@ bison::dynamic_ptr find_singleton_service(const context& s, bison::key_t klass) 
     if (s.notification_service)
       return dynamic_ptr{std::static_pointer_cast<dynamic>(s.notification_service)};
     throw std::runtime_error("wish: this server shows no notifications");
+  }
+  if (klass == "__WishMedia"_key) {
+    // Same reasoning as __WishUserStore: a server built without media (or a
+    // renderer-less host) must be a clear instantiate() error, so the
+    // client reports has_media() == false.
+#ifdef WISH_MEDIA_ENABLED
+    if (s.media_service) {
+      if (rmi_ctx)
+        s.media_service->set_rmi_context(rmi_ctx);
+      return dynamic_ptr{std::static_pointer_cast<dynamic>(s.media_service)};
+    }
+#else
+    (void)rmi_ctx;
+#endif
+    throw std::runtime_error("wish: this server plays no media");
   }
 #ifdef WISH_AUTOMATION_ENABLED
   if (klass == "__WishAutomation"_key) {

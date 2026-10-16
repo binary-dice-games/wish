@@ -31,6 +31,37 @@ inline bool is_host_chrome_class(bison::key_t class_key) {
 }
 
 /**
+ * @brief A texture whose pixels the server rewrites at runtime (e.g. the
+ *        frames of a playing video).
+ *
+ * Created by `renderer::create_dynamic_texture()` and used only on the render
+ * thread, except for destruction: the last reference may be dropped on any
+ * thread (e.g. when a session ends), and the backend frees its resources on
+ * the render thread afterwards.
+ */
+class dynamic_texture {
+ public:
+  virtual ~dynamic_texture() = default;
+
+  /// @brief Width in pixels.
+  virtual int width() const = 0;
+
+  /// @brief Height in pixels.
+  virtual int height() const = 0;
+
+  /**
+   * @brief Replaces every pixel; shown from the next presented frame.
+   * @param rgba   `height()` rows of `width()` RGBA8 pixels.
+   * @param pitch  Bytes between the starts of two rows (>= 4 * width()).
+   */
+  virtual void update(const uint8_t* rgba, int pitch) = 0;
+
+  /// @brief Backend handle: an `ImTextureData*` for the imgui backends.
+  virtual void* native_handle() const = 0;
+};
+using dynamic_texture_ptr = std::shared_ptr<dynamic_texture>;
+
+/**
  * @brief Abstract rendering backend contract.
  *
  * Concrete backends (imgui, Qt, null) implement the three virtual methods.
@@ -172,6 +203,18 @@ class renderer {
    */
   virtual bool consume_render_request() {
     return false;
+  }
+
+  /**
+   * @brief Creates a texture whose pixels can be replaced every frame (see
+   *        `dynamic_texture`). Render thread only.
+   * @return A black @p w x @p h texture, or null when this backend draws no
+   *         textures (the default: headless/null renderers).
+   */
+  virtual dynamic_texture_ptr create_dynamic_texture(int w, int h) {
+    (void)w;
+    (void)h;
+    return nullptr;
   }
 
   /// @brief Called once before any nodes are rendered in a frame.

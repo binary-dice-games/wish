@@ -91,6 +91,42 @@ pub type wish_resource_sync_fn = unsafe extern "C" fn(
     userdata: *mut c_void,
 );
 
+/// `wish_media_handle`
+pub type wish_media_handle = *mut c_void;
+
+pub const WISH_MEDIA_AUTOPLAY: i32 = 1;
+pub const WISH_MEDIA_LOOP: i32 = 2;
+
+pub const WISH_MEDIA_EVENT_STATE: i32 = 0;
+pub const WISH_MEDIA_EVENT_ENDED: i32 = 1;
+pub const WISH_MEDIA_EVENT_ERROR: i32 = 2;
+
+/// `wish_media_status`
+#[repr(C)]
+#[derive(Debug, Default, Clone, Copy)]
+pub struct wish_media_status {
+    pub position: f64,
+    pub duration: f64,
+    pub volume: f32,
+    pub state: i32,
+    pub width: i32,
+    pub height: i32,
+    pub has_video: i32,
+    pub has_audio: i32,
+    pub loop_: i32,
+    pub audio_output: i32,
+}
+
+/// `wish_media_event_fn`: `void (*)(wish_media_handle media, int32_t event,
+/// int32_t state, const char* message, void* userdata)`
+pub type wish_media_event_fn = unsafe extern "C" fn(
+    media: wish_media_handle,
+    event: i32,
+    state: i32,
+    message: *const c_char,
+    userdata: *mut c_void,
+);
+
 extern "C" {
     // ── bison_c.h: lifecycle ────────────────────────────────────────────────
 
@@ -416,6 +452,32 @@ extern "C" {
         out_id: *mut u64,
     ) -> wish_error;
     pub fn wish_notify_dismiss(client: wish_client_handle, id: u64) -> wish_error;
+
+    // ── wish_client_c.h: media playback ──────────────────────────────────────
+
+    pub fn wish_media_available(client: wish_client_handle, out_avail: *mut c_int) -> wish_error;
+    pub fn wish_media_open(
+        client: wish_client_handle,
+        name: *const c_char,
+        path: *const c_char,
+        flags: i32,
+        volume: f32,
+        out: *mut wish_media_handle,
+    ) -> wish_error;
+    pub fn wish_media_play(media: wish_media_handle) -> wish_error;
+    pub fn wish_media_pause(media: wish_media_handle) -> wish_error;
+    pub fn wish_media_stop(media: wish_media_handle) -> wish_error;
+    pub fn wish_media_seek(media: wish_media_handle, seconds: f64) -> wish_error;
+    pub fn wish_media_set_volume(media: wish_media_handle, volume: f32) -> wish_error;
+    pub fn wish_media_set_loop(media: wish_media_handle, loop_: i32) -> wish_error;
+    pub fn wish_media_get_status(media: wish_media_handle, out: *mut wish_media_status) -> wish_error;
+    pub fn wish_media_get_error(media: wish_media_handle, out_text: *mut *mut c_char) -> wish_error;
+    pub fn wish_media_on_event(
+        media: wish_media_handle,
+        fn_: Option<wish_media_event_fn>,
+        userdata: *mut c_void,
+    ) -> wish_error;
+    pub fn wish_media_close(media: wish_media_handle) -> wish_error;
 
     // ── wish_client_c.h: logging ──────────────────────────────────────────────
 

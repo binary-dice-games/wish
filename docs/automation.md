@@ -707,6 +707,30 @@ def test_saving_shows_confirmation(wish_ui):
 
 ## Gotchas
 
+- **Verifying media playback (video frames)** (verified 2026-10, web
+  renderer; see [media.md](media.md)): render a known video, sample pixels
+  from the screenshot, and check what changes. Run a `wish.Client` on a
+  thread that uploads the file, calls `open_media()`, instantiates a
+  template with a `Video` (and/or an `Image` with `src = "media://<name>"`),
+  then seeks. Keep the `instantiate_template()` result in a variable, or
+  the window is destroyed (see the premature-destroy point above). Then
+  `AutomationClient` reads the widget's `rect`, takes `screenshot()`, and
+  samples the rect's center with PIL. A two-color clip (solid red for 2 s,
+  then green; `tests/media_test_files.hpp`'s `write_red_green_video()`
+  writes one, compiled with `pkg-config --libs libavformat libavcodec
+  libavutil`) gives an unambiguous before/after for a `seek(3.0)`. Wait
+  ~1 s after open or seek for the frame to reach the browser. A frame
+  that reads pure white (255, 255, 255) means the browser got a texture id
+  it has no pixels for. That happened once because an `ImTextureData*` was
+  passed as `ImTextureRef(ptr)` (see `texture_ref()` in
+  `imgui_ui_renderer.cpp`). SDL3 frames can't be checked this way because
+  of the native-automation hang above; smoke-run `examples/media_player
+  --renderer sdl3` instead.
+- **Don't stop servers with `pkill -f "<pattern>"` from an agent shell**:
+  the shell running the command has the pattern in its own command line,
+  so it matches and kills itself (exit 143/144, with no output). Kill by PID
+  instead (`for p in $(pgrep -x wish); do kill $p; done`).
+
 - **The server overlay and toasts are host chrome, not widgets** (verified
   2026-10, web renderer): `get_tree()` never lists them. Open the overlay
   with `page.keyboard.press("Shift+F1", delay=80)` (move the mouse over

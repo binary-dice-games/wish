@@ -439,3 +439,17 @@ func TestUnconnectedSyncReportsOneFailure(t *testing.T) {
 		t.Fatalf("reports = %+v", reports)
 	}
 }
+
+func TestMediaUnavailableWithoutSession(t *testing.T) {
+	c, err := NewTCPClient("127.0.0.1", 1)
+	must(t, err)
+	defer c.Destroy()
+	has, err := c.HasMedia()
+	if err != nil || has {
+		t.Fatalf("HasMedia() = %v, %v; want false, nil", has, err)
+	}
+	var we *WishError
+	if _, err := c.OpenMedia("intro", "intro.mp4", DefaultMediaOptions()); !errors.As(err, &we) || we.Code != WishErrUnavailable {
+		t.Fatalf("OpenMedia() error = %v; want WishErrUnavailable", err)
+	}
+}

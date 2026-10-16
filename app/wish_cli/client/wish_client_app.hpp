@@ -116,6 +116,10 @@ class wish_client_app : public bison::app::client_app, public wish_app_host {
   std::future<uint64_t> notify(const notification& n) override;
   std::future<bool> dismiss_notification(uint64_t id) override;
 
+  bool has_media() const override;
+  std::future<bdg::wish::media_player> open_media(
+      const std::string& name, const std::string& path, const bdg::wish::media_options& options) override;
+
   bool has_user_store() const override;
   std::future<std::optional<bison::dynamic>> user_store_get(const std::string& name) override;
   std::future<void> user_store_set(const std::string& name, bison::dynamic value) override;

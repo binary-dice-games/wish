@@ -345,6 +345,25 @@ Design choices:
 - `package_current` validates `name` (`[A-Za-z0-9_.-]`, 1-128 chars, no leading `.`; `file_service::package_path()`) before anything is uploaded.
 - `on_done` runs exactly once per call, success or failure. The C ABI (`wish_sync_resource_package`) maps both callbacks onto one `wish_resource_sync_fn` with a `wish_sync_state`, and the handle waits for pending syncs when the session callback returns, so no sync outlives the session.
 
+### Media playback (`src/media/`, `__WishMedia`)
+
+Optional (`WISH_ENABLE_MEDIA`, needs FFmpeg). Each session gets a
+`media::media_service` (`context::media_service`, class `__WishMedia`) whose
+`open` method creates named `media::media_player` RMI objects: each one plays a
+file from the session sandbox on the server, with FFmpeg decoding on its own
+thread and miniaudio driving the server's sound card. The client sends only
+commands, so no client library or binding links a media library. Video frames
+go to a `renderer::create_dynamic_texture()` texture, drawn by the `Video`
+widget or by `Image` with `src = "media://<name>"`. The render loop advances
+players with `media::pump_sessions()` on every iteration, not only on drawn
+frames, so an audio-only player still reports its end. Sandbox rules, the
+clock, A/V sync and limits are in [docs/media.md](docs/media.md).
+
+**Why the server plays the media.** wish clients may be headless services,
+other languages, or remote processes, and the screen and speakers are the
+server's. Keeping decoding server-side also keeps FFmpeg's LGPL code and its
+size out of every client.
+
 ### Persistent stores (`persistent_store`, `__WishUserStore`)
 
 `bdg::wish::persistent_store` is a thread-safe, file-backed map of entry name → `bison::dynamic`. Every mutation rewrites the file atomically. A `store_registry` (one per `wish::server`/`wish::standalone`, rooted at `set_store_dir()`, default `~/.wish`) owns the **server store** (`server_store.bison`) and one **user store** per authenticated identity (`users/<identity>.bison`). It hands out shared instances, so concurrent sessions of one identity never overwrite each other's in-memory copy.

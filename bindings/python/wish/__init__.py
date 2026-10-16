@@ -21,6 +21,7 @@ Quick start::
 """
 
 from .client import Client, WishError, key
+from .media import MediaPlayer, MediaStatus
 from .server import Server
 
-__all__ = ["Client", "WishError", "key", "Server"]
+__all__ = ["Client", "WishError", "key", "Server", "MediaPlayer", "MediaStatus"]

@@ -602,3 +602,82 @@ TEST_F(WishCppTlsClientTest, MissingTrustAnchorFailsHandshake) {
   auto client = wish::client::tls("127.0.0.1", port_);
   EXPECT_THROW(client.run([](wish::client&) {}), wish::error);
 }
+
+// ── Media playback ───────────────────────────────────────────────────────
+
+#ifdef WISH_MEDIA_ENABLED
+
+namespace {
+
+// 16-bit stereo 48 kHz WAV of silence, @p seconds long.
+std::string silent_wav(double seconds) {
+  const uint32_t frames = static_cast<uint32_t>(seconds * 48000);
+  const uint32_t data = frames * 4;
+  std::string out;
+  auto u32 = [&](uint32_t v) { out.append(reinterpret_cast<const char*>(&v), 4); };
+  auto u16 = [&](uint16_t v) { out.append(reinterpret_cast<const char*>(&v), 2); };
+  out += "RIFF";
+  u32(36 + data);
+  out += "WAVEfmt ";
+  u32(16);
+  u16(1);
+  u16(2);
+  u32(48000);
+  u32(48000 * 4);
+  u16(4);
+  u16(16);
+  out += "data";
+  u32(data);
+  out.append(data, '\0');
+  return out;
+}
+
+}  // namespace
+
+TEST(WishCppMediaTest, OpensPlaysAndHearsTheEnd) {
+  auto s = start_on_free_port<bdg::bison::rmi::transport::socket_server_transport>(0);
+  auto client = wish::client::tcp("127.0.0.1", s.port);
+  bool has = false, ended = false, refused = false, closed_throws = false;
+  wish::media_status st;
+  client.run([&](wish::client& c) {
+    has = c.has_media();
+    c.upload_file("quiet.wav", silent_wav(0.3));
+    wish::media_options options;
+    options.volume = 0.0f;
+    auto player = c.open_media("quiet", "quiet.wav", options);
+    EXPECT_EQ(player.name(), "quiet");
+    std::promise<void> end;
+    std::once_flag once;
+    player.on_event([&](const wish::media_player::event& e) {
+      if (e.what == wish::media_player::event::kind::ended)
+        std::call_once(once, [&] { end.set_value(); });
+    });
+    st = player.status();
+    player.play();
+    ended = end.get_future().wait_for(std::chrono::seconds(10)) == std::future_status::ready;
+    EXPECT_EQ(player.status().state, wish::media_state::ended);
+    EXPECT_EQ(player.error_message(), "");
+    try {
+      c.open_media("x", "../escape.wav");
+    } catch (const wish::error&) {
+      refused = true;
+    }
+    player.close();
+    try {
+      player.play();
+    } catch (const wish::error&) {
+      closed_throws = true;
+    }
+  });
+  s.server->stop();
+  EXPECT_TRUE(has);
+  EXPECT_TRUE(st.has_audio);
+  EXPECT_FALSE(st.has_video);
+  EXPECT_NEAR(st.duration, 0.3, 0.05);
+  EXPECT_EQ(st.state, wish::media_state::stopped);
+  EXPECT_TRUE(ended);
+  EXPECT_TRUE(refused);
+  EXPECT_TRUE(closed_throws);
+}
+
+#endif  // WISH_MEDIA_ENABLED

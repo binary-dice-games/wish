@@ -21,6 +21,10 @@
 #include <server/renderer.hpp>
 #include <ui/ui_elements/window.hpp>
 
+#ifdef WISH_MEDIA_ENABLED
+#include <media/media_service.hpp>
+#endif
+
 #include "src/rmi/shared/profiling.hpp"
 
 #include <imgui.h>
@@ -31,6 +35,7 @@
 #include <cstdio>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -1021,6 +1026,62 @@ static ImTextureID load_icon_texture(imgui_renderer& r, const context& s, const 
   return icon.empty() ? ImTextureID{} : load_image_texture(r, s, icon);
 }
 
+/// @brief The current video frame of media player @p name of session @p s,
+/// or null (no such player, no frame yet, no video, or no media support).
+/// @param size  Receives the video's pixel size when known (also before the
+///              first frame), else is left unchanged.
+static ImTextureData* media_texture(const context& s, const std::string& name, ImVec2* size) {
+#ifdef WISH_MEDIA_ENABLED
+  if (!s.media_service || name.empty())
+    return nullptr;
+  auto player = s.media_service->find(name);
+  if (!player)
+    return nullptr;
+  if (const auto& tex = player->texture()) {
+    if (size)
+      *size = ImVec2(float(tex->width()), float(tex->height()));
+    return static_cast<ImTextureData*>(tex->native_handle());
+  }
+  if (auto engine = player->engine(); engine && size && engine->info().has_video)
+    *size = ImVec2(float(engine->info().width), float(engine->info().height));
+#else
+  (void)s;
+  (void)name;
+  (void)size;
+#endif
+  return nullptr;
+}
+
+/// @brief A reference to @p tex that resolves its backend id at draw time.
+///
+/// Not `ImTextureRef(tex)`: ImTextureRef has no `ImTextureData*`
+/// constructor, so that would pick the legacy `void*` overload and pass the
+/// pointer itself as a backend texture id (drawn as an unknown, white
+/// texture).
+static ImTextureRef texture_ref(ImTextureData* tex) {
+  ImTextureRef ref;
+  ref._TexData = tex;
+  return ref;
+}
+
+/// @brief Prefix of an `Image.src` that shows a media player's video frame
+/// instead of a file: `"media://<player name>"`.
+static constexpr std::string_view kMediaScheme = "media://";
+
+/// @brief Texture for an `Image.src`: a sandboxed image file, or a media
+/// player's current frame for `"media://<name>"`. Empty when unavailable.
+static std::optional<ImTextureRef> image_texture(imgui_renderer& r, const context& s, const std::string& src) {
+  if (src.compare(0, kMediaScheme.size(), kMediaScheme) == 0) {
+    if (ImTextureData* tex = media_texture(s, src.substr(kMediaScheme.size()), nullptr))
+      return texture_ref(tex);
+    return std::nullopt;
+  }
+  ImTextureID id = load_image_texture(r, s, src);
+  if (!id)
+    return std::nullopt;
+  return ImTextureRef(id);
+}
+
 void render_image(imgui_renderer& r, const ui_element& node0, const context& s) {
   const auto& node = static_cast<const ui_image&>(node0);
   const std::string& src = node.src_ref();
@@ -1070,7 +1131,7 @@ void render_image(imgui_renderer& r, const ui_element& node0, const context& s) 
     reserve();
     return;
   }
-  ImTextureID tex = load_image_texture(r, s, src);
+  std::optional<ImTextureRef> tex = image_texture(r, s, src);
   if (!tex) {
     reserve();
     return;
@@ -1098,7 +1159,7 @@ void render_image(imgui_renderer& r, const ui_element& node0, const context& s) 
     dl->AddRectFilled(p0, p1, ImGui::GetColorU32(parse_hex_color(badge->as<std::string>())), size.x * 0.24f);
     const float inset = std::min(size.x, size.y) * 0.17f;
     dl->AddImage(
-        ImTextureRef(tex),
+        *tex,
         ImVec2(p0.x + inset, p0.y + inset),
         ImVec2(p1.x - inset, p1.y - inset),
         ImVec2(0, 0),
@@ -1106,7 +1167,54 @@ void render_image(imgui_renderer& r, const ui_element& node0, const context& s) 
         ImGui::GetColorU32(tint_col));
     return;
   }
-  ImGui::ImageWithBg(tex, ImVec2(float(w), float(h)), ImVec2(0, 0), ImVec2(1, 1), ImVec4(0, 0, 0, 0), tint_col);
+  ImGui::ImageWithBg(*tex, ImVec2(float(w), float(h)), ImVec2(0, 0), ImVec2(1, 1), ImVec4(0, 0, 0, 0), tint_col);
+}
+
+void render_video(imgui_renderer&, const ui_element& node, const context& s) {
+  const std::string player = node.get_as<std::string>("player"_key, "");
+  ImVec2 video_size(0.0f, 0.0f);
+  ImTextureData* tex = media_texture(s, player, &video_size);
+  const video_layout box = layout_video(node.width_i(0), node.height_i(0), ImGui::GetContentRegionAvail(), video_size,
+      node.get_as<bool>("keep_aspect"_key, true));
+  if (box.size.x <= 0.0f || box.size.y <= 0.0f)
+    return;
+
+  const ImVec2 p0 = ImGui::GetCursorScreenPos();
+  ImGui::PushID(stable_id(node).c_str());
+  if (ImGui::InvisibleButton("##video", box.size))
+    enqueue_event(s, node.wish_id(), "clicked"_key, dynamic{});
+  ImGui::PopID();
+
+  ImDrawList* dl = ImGui::GetWindowDrawList();
+  const ImVec2 p1(p0.x + box.size.x, p0.y + box.size.y);
+  dl->AddRectFilled(p0, p1, IM_COL32(0, 0, 0, 255));
+  if (!tex)
+    return;
+  const std::string tint = node.get_as<std::string>("tint"_key, "");
+  const ImU32 tint_col = tint.empty() ? IM_COL32_WHITE : ImGui::GetColorU32(parse_hex_color(tint));
+  dl->AddImage(texture_ref(tex), ImVec2(p0.x + box.image_min.x, p0.y + box.image_min.y),
+      ImVec2(p0.x + box.image_max.x, p0.y + box.image_max.y), ImVec2(0, 0), ImVec2(1, 1), tint_col);
+}
+
+video_layout layout_video(int32_t width, int32_t height, ImVec2 avail, ImVec2 video_size, bool keep_aspect) {
+  const bool known = video_size.x > 0.0f && video_size.y > 0.0f;
+  const float aspect = known ? video_size.x / video_size.y : 16.0f / 9.0f;
+  video_layout box;
+  box.size.x = width < 0 ? avail.x : width == 0 ? (known ? video_size.x : 320.0f) : float(width);
+  box.size.y = height < 0 ? avail.y : height == 0 ? box.size.x / aspect : float(height);
+  box.image_max = box.size;
+  if (keep_aspect && box.size.x > 0.0f && box.size.y > 0.0f) {
+    // Largest aspect-correct rect centered in the box (letter/pillarbox).
+    float w = box.size.x;
+    float h = w / aspect;
+    if (h > box.size.y) {
+      h = box.size.y;
+      w = h * aspect;
+    }
+    box.image_min = ImVec2((box.size.x - w) * 0.5f, (box.size.y - h) * 0.5f);
+    box.image_max = ImVec2(box.image_min.x + w, box.image_min.y + h);
+  }
+  return box;
 }
 
 void render_separator(imgui_renderer&, const ui_element&, const context&) {

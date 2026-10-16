@@ -33,6 +33,8 @@ option(WISH_ENABLE_AUTOMATION "Build the automation query API (headless UI autom
      AI agents / e2e tests): browser-driven via Playwright when WISH_ENABLE_WEB is on, and/or \
      native ABI-driven automation (no browser) when WISH_ENABLE_SDL3 is on -- requires at \
      least one of the two" OFF)
+option(WISH_ENABLE_MEDIA     "Server-side audio/video playback (FFmpeg + miniaudio); turned off with a \
+     message when FFmpeg is not found" ON)
 option(WISH_BUILD_SHARED     "Build wish_client shared library with C ABI"   ON)
 option(WISH_BUILD_SERVER_SHARED "Build wish_server shared library with C ABI, hosting/rendering a session via SDL3, the web renderer, or a headless console dump" OFF)
 
@@ -267,6 +269,31 @@ add_subdirectory(extern/miniz)
 set_target_properties(miniz PROPERTIES FOLDER extern
     POSITION_INDEPENDENT_CODE ON)
 
+# ── Media playback — FFmpeg (system) + miniaudio (submodule) ─────────────────
+#
+# Server-only: the client libraries never link either. FFmpeg comes from the
+# system (apt/brew/pacman, or FFMPEG_ROOT/WISH_FFMPEG_ROOT on MSVC; see
+# docs/building.md) because it builds with its own configure script, not
+# CMake. Without it media is switched off instead of failing the build, and
+# clients see has_media() == false.
+
+if(WISH_ENABLE_MEDIA AND WISH_ENABLE_IMGUI AND NOT ANDROID)
+  list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
+  find_package(FFMPEG)
+  if(FFMPEG_FOUND)
+    wish_ensure_submodules(extern/miniaudio)
+    add_library(miniaudio INTERFACE)
+    target_include_directories(miniaudio INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/extern/miniaudio)
+    message(STATUS "wish: media playback ON (libavformat ${FFMPEG_VERSION})")
+  else()
+    message(STATUS "wish: media playback OFF -- FFmpeg (libavformat, libavcodec, libavutil, libswscale, "
+                   "libswresample) not found; see docs/building.md")
+    set(WISH_ENABLE_MEDIA OFF)
+  endif()
+else()
+  set(WISH_ENABLE_MEDIA OFF)
+endif()
+
 # ── Embedded resources — zip the asset tree, then embed as one byte array ────
 #
 # wish_generate_embedded_resources() (cmake/WishResources.cmake) does the
@@ -286,6 +313,7 @@ add_library(wish_client STATIC
   src/client/desktop_endpoint.hpp
   src/client/desktop_endpoint.cpp
   src/client/wish_app_host.hpp
+  src/client/media_player.hpp
   src/client/resource_sync.hpp
   src/client/user_store_rpc.hpp
   src/ui/ui_descriptor.hpp
@@ -373,6 +401,7 @@ add_library(wish_server STATIC
   src/ui/ui_elements/slider.cpp
   src/ui/ui_elements/input_text.cpp
   src/ui/ui_elements/image.cpp
+  src/ui/ui_elements/video.cpp
   src/ui/ui_elements/separator.cpp
   src/ui/ui_elements/menu.cpp
   src/ui/ui_elements/desktop_shell.cpp
@@ -520,6 +549,28 @@ if(WISH_ENABLE_IMGUI AND WISH_ENABLE_AUTOMATION)
   target_include_directories(wish_server PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/extern/bison/extern/json/single_include
   )
+endif()
+
+if(WISH_ENABLE_MEDIA)
+  target_sources(wish_server PRIVATE
+    src/media/media_decoder.hpp
+    src/media/media_decoder.cpp
+    src/media/audio_output.hpp
+    src/media/audio_output.cpp
+    src/media/playback.hpp
+    src/media/playback.cpp
+    src/media/media_player.hpp
+    src/media/media_player.cpp
+    src/media/media_service.hpp
+    src/media/media_service.cpp
+  )
+  target_compile_definitions(wish_server PUBLIC WISH_MEDIA_ENABLED)
+  # PRIVATE: FFmpeg/miniaudio headers stay inside src/media/*.cpp.
+  target_link_libraries(wish_server PRIVATE FFMPEG::FFMPEG miniaudio)
+  if(UNIX AND NOT APPLE)
+    # miniaudio dlopen()s the platform audio API at runtime.
+    target_link_libraries(wish_server PRIVATE ${CMAKE_DL_LIBS} pthread m)
+  endif()
 endif()
 
 set_target_properties(wish_server PROPERTIES POSITION_INDEPENDENT_CODE ON)

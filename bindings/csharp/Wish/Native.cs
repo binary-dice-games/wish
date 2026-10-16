@@ -44,6 +44,29 @@ internal delegate void NativeSessionFn(nint client, nint userdata);
 internal delegate void NativeResourceSyncFn(
     nint client, nint name, int state, ulong transferred, ulong total, nint error, nint userdata);
 
+/// <summary>
+/// <c>wish_media_event_fn</c>: void(*)(wish_media_handle media, int32_t event, int32_t state,
+/// const char* message, void* userdata).
+/// </summary>
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+internal delegate void NativeMediaEventFn(nint media, int ev, int state, nint message, nint userdata);
+
+/// <summary>Mirrors <c>wish_media_status</c>.</summary>
+[StructLayout(LayoutKind.Sequential)]
+internal struct NativeMediaStatus
+{
+    public double Position;
+    public double Duration;
+    public float Volume;
+    public int State;
+    public int Width;
+    public int Height;
+    public int HasVideo;
+    public int HasAudio;
+    public int Loop;
+    public int AudioOutput;
+}
+
 internal static partial class Native
 {
     private const string LibName = "wish_client";
@@ -284,6 +307,44 @@ internal static partial class Native
 
     [LibraryImport(LibName)]
     public static partial int wish_notify_dismiss(nint client, ulong id);
+
+    // ── Media playback ────────────────────────────────────────────────────────
+
+    [LibraryImport(LibName)]
+    public static partial int wish_media_available(nint client, out int outAvail);
+
+    [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]
+    public static partial int wish_media_open(nint client, string name, string path, int flags, float volume, out nint outMedia);
+
+    [LibraryImport(LibName)]
+    public static partial int wish_media_play(nint media);
+
+    [LibraryImport(LibName)]
+    public static partial int wish_media_pause(nint media);
+
+    [LibraryImport(LibName)]
+    public static partial int wish_media_stop(nint media);
+
+    [LibraryImport(LibName)]
+    public static partial int wish_media_seek(nint media, double seconds);
+
+    [LibraryImport(LibName)]
+    public static partial int wish_media_set_volume(nint media, float volume);
+
+    [LibraryImport(LibName)]
+    public static partial int wish_media_set_loop(nint media, int loop);
+
+    [LibraryImport(LibName)]
+    public static partial int wish_media_get_status(nint media, out NativeMediaStatus outStatus);
+
+    [LibraryImport(LibName)]
+    public static partial int wish_media_get_error(nint media, out nint outText);
+
+    [LibraryImport(LibName)]
+    public static partial int wish_media_on_event(nint media, nint fn, nint userdata);
+
+    [LibraryImport(LibName)]
+    public static partial int wish_media_close(nint media);
 
     // ── Logging ───────────────────────────────────────────────────────────────
 

@@ -43,3 +43,7 @@
 	path = extern/curl
 	url = https://github.com/curl/curl.git
 	branch = curl-8_21_0
+[submodule "extern/miniaudio"]
+	path = extern/miniaudio
+	url = https://github.com/mackron/miniaudio.git
+	branch = 0.11.25

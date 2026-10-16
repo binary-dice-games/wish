@@ -23,6 +23,7 @@
 #include "error.hpp"
 #include "future.hpp"
 #include "key.hpp"
+#include "media.hpp"
 #include "proxy.hpp"
 #include "settings.hpp"
 #include "value.hpp"
@@ -550,6 +551,29 @@ class client {
   /// @brief Remove one of this session's notifications early.
   void dismiss_notification(uint64_t id) {
     detail::throw_if_wish_error(wish_notify_dismiss(h_, id), "client::dismiss_notification", h_);
+  }
+
+  // ── Media playback ───────────────────────────────────────────────────
+
+  /// @brief Whether the server plays media (see wish_media_available()).
+  bool has_media() const {
+    int avail = 0;
+    detail::throw_if_wish_error(wish_media_available(h_, &avail), "client::has_media", h_);
+    return avail != 0;
+  }
+
+  /**
+   * @brief Open @p path, a file already uploaded to the session sandbox, as
+   *        player @p name (see wish_media_open()).
+   * @throws wish_error when the server plays no media, the path is refused
+   *         or missing, or the file isn't playable.
+   */
+  media_player open_media(const std::string& name, const std::string& path, const media_options& options = {}) {
+    wish_media_handle h = nullptr;
+    const int32_t flags = (options.autoplay ? WISH_MEDIA_AUTOPLAY : 0) | (options.loop ? WISH_MEDIA_LOOP : 0);
+    detail::throw_if_wish_error(
+        wish_media_open(h_, name.c_str(), path.c_str(), flags, options.volume, &h), "client::open_media", h_);
+    return media_player{h, h_, name};
   }
 
   // ── Logging ──────────────────────────────────────────────────────────

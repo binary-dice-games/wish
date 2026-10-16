@@ -796,6 +796,38 @@ class Client:
         """Remove one of this session's notifications early."""
         _check(self._lib.wish_notify_dismiss(self._handle, id), "dismiss_notification", self.last_error)
 
+    # ── Media playback ───────────────────────────────────────────────────────
+
+    def has_media(self) -> bool:
+        """Whether the server plays media (it was built with FFmpeg)."""
+        out = ctypes.c_int(0)
+        _check(self._lib.wish_media_available(self._handle, ctypes.byref(out)), "has_media", self.last_error)
+        return bool(out.value)
+
+    def open_media(
+        self, name: str, path: str, *, autoplay: bool = False, loop: bool = False, volume: float = 1.0
+    ) -> "MediaPlayer":
+        """Open ``path``, a file already uploaded to the session sandbox, as
+        player ``name`` and return a :class:`wish.media.MediaPlayer`.
+
+        The server plays it: show its video with a ``Video`` widget whose
+        ``player`` is ``name``. Absolute paths, ``..`` escapes and URLs are
+        refused; opening an open name replaces that player; a session has at
+        most 8. Raises ``WishError`` when the server plays no media, the path
+        is refused or missing, or the file isn't playable."""
+        from .media import MediaPlayer
+
+        flags = (_n.WISH_MEDIA_AUTOPLAY if autoplay else 0) | (_n.WISH_MEDIA_LOOP if loop else 0)
+        out = _n.MediaHandle()
+        _check(
+            self._lib.wish_media_open(
+                self._handle, name.encode("utf-8"), path.encode("utf-8"), flags, float(volume), ctypes.byref(out)
+            ),
+            f"open_media({name!r})",
+            self.last_error,
+        )
+        return MediaPlayer(self._lib, out.value, name, self.last_error)
+
     # ── Logging ──────────────────────────────────────────────────────────────
 
     def log(self, level: str, msg: str) -> None:

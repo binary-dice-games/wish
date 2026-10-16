@@ -62,6 +62,12 @@ void client::on_connect() {
   } catch (...) {
     notifications_proxy_.reset();
   }
+  // Non-fatal too: a server built without media support (or an older one).
+  try {
+    media_proxy_ = std::make_shared<bison::rmi::proxy::dynamic>(instantiate("wish"_key, "__WishMedia"_key).get());
+  } catch (...) {
+    media_proxy_.reset();
+  }
 }
 
 void client::on_disconnect() {
@@ -72,6 +78,7 @@ void client::on_disconnect() {
   automation_proxy_.reset();
   user_store_proxy_.reset();
   notifications_proxy_.reset();
+  media_proxy_.reset();
   if (on_disconnected_)
     on_disconnected_();
 }
@@ -413,6 +420,15 @@ std::future<bool> client::dismiss_notification(uint64_t id) {
   return std::async(std::launch::async, [this, id]() {
     detail::require_notifications(notifications_proxy_);
     return detail::dismiss_notification_sync(*notifications_proxy_, id);
+  });
+}
+
+// ── Media playback ──────────────────────────────────────────────────────────
+
+std::future<media_player> client::open_media(
+    const std::string& name, const std::string& path, const media_options& options) {
+  return std::async(std::launch::async, [this, service = media_proxy_, name, path, options]() {
+    return detail::open_media_sync(service, [this](key_t id) { return make_proxy(id); }, name, path, options);
   });
 }
 

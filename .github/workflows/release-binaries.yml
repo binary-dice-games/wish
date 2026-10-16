@@ -55,6 +55,9 @@ jobs:
         with:
           submodules: recursive
 
+      # FFmpeg is deliberately not installed: these zips must run without
+      # system libav* libraries, so media playback configures OFF here (the
+      # .deb, which declares its dependencies, has it -- release-deb.yml).
       - name: Install Linux build prerequisites
         if: runner.os == 'Linux'
         run: |

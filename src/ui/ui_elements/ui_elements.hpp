@@ -19,6 +19,7 @@ void register_checkbox();
 void register_slider();
 void register_input_text();
 void register_image();
+void register_video();
 void register_separator(); // Separator + SeparatorText
 void register_menu(); // MenuBar, Menu, MenuItem, MenuButton
 void register_desktop_shell(); // DesktopShell, DesktopMenu, DesktopApp

@@ -31,7 +31,8 @@ jobs:
             ninja-build build-essential dpkg-dev \
             libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev \
             libwayland-dev libxkbcommon-dev \
-            libgl1-mesa-dev libgles2-mesa-dev
+            libgl1-mesa-dev libgles2-mesa-dev \
+            libavformat-dev libavcodec-dev libavutil-dev libswscale-dev libswresample-dev pkg-config
 
       - name: Derive package version from release tag
         id: version

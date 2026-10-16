@@ -912,6 +912,152 @@ WISH_API wish_error wish_notify(
  */
 WISH_API wish_error wish_notify_dismiss(wish_client_handle client, uint64_t id);
 
+/* ── Media playback ───────────────────────────────────────────────────────── */
+
+/**
+ * Audio and video played by the server (see docs/media.md). The server
+ * decodes the file, drives its own sound card and shows video frames in
+ * `Video` widgets (`"player": "<name>"`) or `Image` widgets
+ * (`"src": "media://<name>"`); this library only sends commands and links
+ * no media library.
+ *
+ * A file must already be in the session sandbox (uploaded with
+ * wish_upload_file() or wish_sync_resource_package()): absolute paths, `..`
+ * escapes and URLs are refused. A session has at most 8 players.
+ *
+ * Every function blocks until the server answered.
+ */
+
+/** @brief Handle to one player opened by wish_media_open(). */
+typedef struct wish_media_handle_* wish_media_handle;
+
+#define WISH_MEDIA_AUTOPLAY 1 /**< wish_media_open() flag: start playing right away. */
+#define WISH_MEDIA_LOOP 2     /**< wish_media_open() flag: restart at the end. */
+
+#define WISH_MEDIA_STATE_STOPPED 0 /**< At the start, not playing. */
+#define WISH_MEDIA_STATE_PLAYING 1
+#define WISH_MEDIA_STATE_PAUSED 2
+#define WISH_MEDIA_STATE_ENDED 3 /**< Reached the end without looping. */
+#define WISH_MEDIA_STATE_ERROR 4 /**< Decoding failed; see wish_media_get_error(). */
+
+#define WISH_MEDIA_EVENT_STATE 0 /**< The state changed (the `state` argument). */
+#define WISH_MEDIA_EVENT_ENDED 1 /**< Playback reached the end without looping. */
+#define WISH_MEDIA_EVENT_ERROR 2 /**< Decoding failed (the `message` argument). */
+
+/** @brief Snapshot of a player, from wish_media_get_status(). */
+typedef struct wish_media_status {
+  double position;      /**< Seconds. */
+  double duration;      /**< Seconds; 0 when the file doesn't say. */
+  float volume;         /**< 0 .. 1. */
+  int32_t state;        /**< WISH_MEDIA_STATE_*. */
+  int32_t width;        /**< Video width in pixels; 0 without video. */
+  int32_t height;       /**< Video height in pixels; 0 without video. */
+  int32_t has_video;    /**< 1 when the file has video. */
+  int32_t has_audio;    /**< 1 when the file has audio. */
+  int32_t loop;         /**< 1 when it restarts at the end. */
+  int32_t audio_output; /**< 0 when the server has no sound card (silent). */
+} wish_media_status;
+
+/**
+ * @brief Called for each player event (see wish_media_on_event()).
+ *
+ * Runs on the client's event thread; @p message is valid only during the
+ * call. Must not call wish_media_on_event() or wish_media_close() on
+ * @p media (the callback runs under the lock those take).
+ *
+ * @param media     The player.
+ * @param event     WISH_MEDIA_EVENT_*.
+ * @param state     The new WISH_MEDIA_STATE_* (for every event).
+ * @param message   Error text for WISH_MEDIA_EVENT_ERROR, else "".
+ * @param userdata  As passed to wish_media_on_event().
+ */
+typedef void (*wish_media_event_fn)(
+    wish_media_handle media, int32_t event, int32_t state, const char* message, void* userdata);
+
+/**
+ * @brief Whether the server plays media (it was built with FFmpeg).
+ * @param client     Active session handle.
+ * @param out_avail  Output: 1 or 0.
+ * @return WISH_OK; WISH_ERR_NULL.
+ */
+WISH_API wish_error wish_media_available(wish_client_handle client, int* out_avail);
+
+/**
+ * @brief Open a file of the session sandbox as player @p name.
+ *
+ * Opening a name that is already open replaces (closes) that player.
+ *
+ * @param client  Active session handle.
+ * @param name    Name widgets refer to (1-128 bytes).
+ * @param path    Sandbox-relative path of an uploaded file.
+ * @param flags   WISH_MEDIA_AUTOPLAY | WISH_MEDIA_LOOP, or 0.
+ * @param volume  Initial volume, 0 .. 1.
+ * @param out     Output: the player; free it with wish_media_close().
+ * @return WISH_OK; WISH_ERR_UNAVAILABLE when the server plays no media;
+ *         WISH_ERR_NULL; WISH_ERR_EXCEPTION (a refused or missing path, a
+ *         file that isn't playable, too many players; see wish_last_error()).
+ */
+WISH_API wish_error wish_media_open(
+    wish_client_handle client, const char* name, const char* path, int32_t flags, float volume, wish_media_handle* out);
+
+/**
+ * @brief Start or resume; from the end, restart from the beginning.
+ * @return WISH_OK; WISH_ERR_NULL; WISH_ERR_EXCEPTION (closed player, ended
+ *         session; see wish_last_error() of the client).
+ */
+WISH_API wish_error wish_media_play(wish_media_handle media);
+
+/** @brief Pause at the current position. @return As wish_media_play(). */
+WISH_API wish_error wish_media_pause(wish_media_handle media);
+
+/** @brief Pause and rewind to the start. @return As wish_media_play(). */
+WISH_API wish_error wish_media_stop(wish_media_handle media);
+
+/**
+ * @brief Move to @p seconds (clamped to the file), keeping playing/paused.
+ * @return As wish_media_play().
+ */
+WISH_API wish_error wish_media_seek(wish_media_handle media, double seconds);
+
+/** @brief Set the volume, 0 (mute) .. 1. @return As wish_media_play(). */
+WISH_API wish_error wish_media_set_volume(wish_media_handle media, float volume);
+
+/** @brief Whether to restart at the end (0 or 1). @return As wish_media_play(). */
+WISH_API wish_error wish_media_set_loop(wish_media_handle media, int32_t loop);
+
+/**
+ * @brief Read the player's state, position and stream info.
+ * @param media  The player.
+ * @param out    Output.
+ * @return As wish_media_play().
+ */
+WISH_API wish_error wish_media_get_status(wish_media_handle media, wish_media_status* out);
+
+/**
+ * @brief Why the player is in WISH_MEDIA_STATE_ERROR.
+ * @param media     The player.
+ * @param out_text  Output: a string to release with bison_free_string(); "" when
+ *                  there is no error.
+ * @return As wish_media_play().
+ */
+WISH_API wish_error wish_media_get_error(wish_media_handle media, char** out_text);
+
+/**
+ * @brief Receive the player's events in @p fn (replacing any earlier
+ *        callback; NULL stops them). Events raised before this call are not
+ *        replayed (e.g. the "playing" change of WISH_MEDIA_AUTOPLAY).
+ * @return WISH_OK; WISH_ERR_NULL; WISH_ERR_EXCEPTION.
+ */
+WISH_API wish_error wish_media_on_event(wish_media_handle media, wish_media_event_fn fn, void* userdata);
+
+/**
+ * @brief Close the player on the server (stops it, frees the decoder,
+ *        device and texture) and free @p media. Safe after the session
+ *        ended; players left open are freed by wish_client_destroy().
+ * @return WISH_OK; WISH_ERR_NULL.
+ */
+WISH_API wish_error wish_media_close(wish_media_handle media);
+
 /* ── Logging ──────────────────────────────────────────────────────────────── */
 
 /**

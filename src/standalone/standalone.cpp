@@ -18,6 +18,10 @@
 #include <automation/automation_service.hpp>
 #endif
 
+#ifdef WISH_MEDIA_ENABLED
+#include <media/media_service.hpp>
+#endif
+
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
@@ -106,6 +110,10 @@ void standalone::on_session_created(bison::rmi::context& ctx) {
         sess->automation_service = automation_service::instantiate(backend, logger_);
     }
 #endif
+#ifdef WISH_MEDIA_ENABLED
+    if (renderer_)
+      sess->media_service = media::media_service::instantiate(sess->resource_dir, sess->allow_absolute_paths);
+#endif
     on_session_created(*sess);
   }
 
@@ -133,6 +141,12 @@ void standalone::on_session_created(bison::rmi::context& ctx) {
   } catch (...) {
     notifications_proxy_.reset();
   }
+  // Non-fatal: built without media support, or no renderer.
+  try {
+    media_proxy_ = std::make_shared<bison::rmi::proxy::dynamic>(instantiate("wish"_key, "__WishMedia"_key).get());
+  } catch (...) {
+    media_proxy_.reset();
+  }
 }
 
 void standalone::on_session_destroyed(bison::rmi::context& ctx) {
@@ -141,11 +155,17 @@ void standalone::on_session_destroyed(bison::rmi::context& ctx) {
     return;
   auto lock = context_wlock{*context_};
   on_session_destroyed(*lock);
+#ifdef WISH_MEDIA_ENABLED
+  if (lock->media_service) {
+    for (const auto& name : lock->media_service->names())
+      lock->media_service->close(name);
+  }
+#endif
 }
 
 bison::dynamic_ptr standalone::on_create_object(bison::rmi::context& ctx, bison::key_t ns, bison::key_t klass) {
   if (context_ && detail::current_context) {
-    if (auto svc = detail::find_singleton_service(*detail::current_context, klass))
+    if (auto svc = detail::find_singleton_service(*detail::current_context, klass, &ctx))
       return svc;
   }
 
@@ -202,6 +222,11 @@ void standalone::render_loop() {
         last_tick_time_ = now;
         renderer_->tick(sessions_snapshot);
       }
+
+#ifdef WISH_MEDIA_ENABLED
+      // See the matching comment in wish::server::render_loop().
+      media::pump_sessions(*renderer_, sessions_snapshot);
+#endif
 
       // render_on_demand() renderers don't treat routine poll_events()
       // activity (WS traffic, resize, ...) as a reason to draw -- only
@@ -554,6 +579,13 @@ std::future<bool> standalone::dismiss_notification(uint64_t id) {
   return std::async(std::launch::async, [this, id]() {
     detail::require_notifications(notifications_proxy_);
     return detail::dismiss_notification_sync(*notifications_proxy_, id);
+  });
+}
+
+std::future<media_player> standalone::open_media(
+    const std::string& name, const std::string& path, const media_options& options) {
+  return std::async(std::launch::async, [this, service = media_proxy_, name, path, options]() {
+    return detail::open_media_sync(service, [this](bison::key_t id) { return make_proxy(id); }, name, path, options);
   });
 }
 

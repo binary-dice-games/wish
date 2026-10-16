@@ -97,6 +97,14 @@ class wish_standalone_session : public standalone, public wish_app_host {
     return standalone::dismiss_notification(id);
   }
 
+  bool has_media() const override {
+    return standalone::has_media();
+  }
+  std::future<bdg::wish::media_player> open_media(
+      const std::string& name, const std::string& path, const bdg::wish::media_options& options) override {
+    return standalone::open_media(name, path, options);
+  }
+
   bool has_user_store() const override {
     return standalone::has_user_store();
   }

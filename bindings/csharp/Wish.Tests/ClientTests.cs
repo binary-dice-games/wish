@@ -231,3 +231,15 @@ public class RunWithConnectParamsTests
         Assert.Equal(WishErrorCode.Exception, ex.Code);
     }
 }
+
+public class MediaTests
+{
+    [Fact]
+    public void UnconnectedClientHasNoMedia()
+    {
+        using var client = Client.Tcp("127.0.0.1", 7070);
+        Assert.False(client.HasMedia);
+        var ex = Assert.Throws<WishException>(() => client.OpenMedia("intro", "intro.mp4"));
+        Assert.Equal(WishErrorCode.Unavailable, ex.Code);
+    }
+}

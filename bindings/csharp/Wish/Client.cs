@@ -704,6 +704,33 @@ public sealed class Client : IDisposable
     public void DismissNotification(ulong id) =>
         WishException.Check(Native.wish_notify_dismiss(_handle, id), "dismiss_notification", LastError);
 
+    // ── Media playback ────────────────────────────────────────────────────────
+
+    /// <summary>Whether the server plays media (it was built with FFmpeg).</summary>
+    public bool HasMedia
+    {
+        get
+        {
+            WishException.Check(Native.wish_media_available(_handle, out int avail), "has_media", LastError);
+            return avail != 0;
+        }
+    }
+
+    /// <summary>
+    /// Opens <paramref name="path"/>, a file already uploaded to the session sandbox, as player
+    /// <paramref name="name"/>. The server plays it; show its video with a <c>Video</c> widget whose
+    /// <c>player</c> is <paramref name="name"/>. Absolute paths, <c>..</c> escapes and URLs are refused.
+    /// </summary>
+    /// <exception cref="WishException">The server plays no media, the path is refused or missing,
+    /// or the file isn't playable.</exception>
+    public MediaPlayer OpenMedia(string name, string path, bool autoplay = false, bool loop = false, float volume = 1.0f)
+    {
+        int flags = (autoplay ? 1 : 0) | (loop ? 2 : 0);
+        WishException.Check(
+            Native.wish_media_open(_handle, name, path, flags, volume, out nint media), $"open_media({name})", LastError);
+        return new MediaPlayer(media, name, LastError);
+    }
+
     // ── Logging ───────────────────────────────────────────────────────────────
 
     /// <summary>Sends a structured log message: <paramref name="level"/> is "debug"/"info"/"warn"/"error".</summary>

@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Media playback (see [docs/media.md](docs/media.md)): clients play audio and video files from their sandbox on the server, which decodes them with FFmpeg and plays the sound with miniaudio; clients link no media library. `open_media()` / `has_media()` on `wish::client`, `wish::standalone` and `wish_app_host` return a `wish::media_player` (`play`, `pause`, `stop`, `seek`, `set_volume`, `set_loop`, `status`, `close`; `state_changed` / `ended` / `error` events). C ABI `wish_media_available()` / `wish_media_open()` / `wish_media_*` on a `wish_media_handle`; `open_media` / `OpenMedia` / `openMedia` and a `MediaPlayer` in the C++, Python, C#, Rust, Go and Java bindings.
+- `Video` widget showing a media player's frames (`player`, `width`, `height`, `keep_aspect`, `tint`; emits `clicked`), and `Image.src = "media://<player>"`.
+- `WISH_ENABLE_MEDIA` CMake option (on by default; turned off at configure time when FFmpeg's development libraries are missing).
+- `renderer::create_dynamic_texture()`: textures whose pixels the server rewrites every frame, on the SDL3 and web renderers.
+
 - Resource package sync: `sync_resource_package(name, zip, dest_path, on_progress, on_done)` on `wish::client`, `wish::standalone` and `wish_app_host` uploads a zip and unpacks it into the sandbox in the background, only when the local zip changed since the server last unpacked package `name`. C ABI `wish_sync_resource_package()` / `wish_wait_resource_syncs()`; `sync_resource_package` / `SyncResourcePackage` / `syncResourcePackage` in the C++, Python, C#, Rust, Go and Java bindings.
 - `file_service::unpack()` with an empty `dest` extracts into the sandbox root.
 - Server overlay (see [docs/server-overlay.md](docs/server-overlay.md)): Shift+F1 (new `--overlay_hotkey` flag; also **Server → Overlay**) opens a Steam-like full-screen overlay over every app on `wish server`, with an overview of the server and the local machine, the connected clients, a settings editor for the server store and each user store, the live server log, links to the project and its documentation, and buttons to open the sandbox and log folders and to shut the server down. A notification at startup shows the key.

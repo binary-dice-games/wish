@@ -368,6 +368,33 @@ public final class Client implements AutoCloseable {
     check(nativeNotifyDismiss(handle, id));
   }
 
+  // ─── Media playback ─────────────────────────────────────────────────────
+
+  /** Whether the server plays media (it was built with FFmpeg). */
+  public boolean hasMedia() {
+    return nativeMediaAvailable(handle);
+  }
+
+  /** Opens {@code path} paused, at full volume; see {@link #openMedia(String, String, boolean, boolean, float)}. */
+  public MediaPlayer openMedia(String name, String path) {
+    return openMedia(name, path, false, false, 1.0f);
+  }
+
+  /**
+   * Opens {@code path}, a file already uploaded to the session sandbox, as player {@code name}.
+   * The server plays it; show its video with a {@code Video} widget whose {@code player} is
+   * {@code name}. Absolute paths, {@code ..} escapes and URLs are refused.
+   *
+   * @throws WishException when the server plays no media, the path is refused or missing, or
+   *     the file isn't playable
+   */
+  public MediaPlayer openMedia(String name, String path, boolean autoplay, boolean loop, float volume) {
+    int flags = (autoplay ? 1 : 0) | (loop ? 2 : 0);
+    long media = nativeMediaOpen(handle, name, path, flags, volume);
+    if (media < 0) check((int) media);
+    return new MediaPlayer(this, media, name);
+  }
+
   // ─── Logging ────────────────────────────────────────────────────────────
 
   /** Sends a structured log message; {@code level} is "debug"/"info"/"warn"/"error". */
@@ -430,6 +457,9 @@ public final class Client implements AutoCloseable {
   private static native long nativeNotify(
       long handle, String title, String body, int kind, String keys, int durationMs, String tag);
   private static native int nativeNotifyDismiss(long handle, long id);
+
+  private static native boolean nativeMediaAvailable(long handle);
+  private static native long nativeMediaOpen(long handle, String name, String path, int flags, float volume);
 
   private static native int nativeLog(long handle, String level, String msg);
 }

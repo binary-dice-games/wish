@@ -123,6 +123,19 @@ done.
 | Go | `c.Notify(wish.Notification{Title: "Backup finished", Kind: wish.NotifySuccess})` |
 | Java (Android) | `c.showNotification("Backup finished", "42 files")` (not `notify`: that is `Object.notify()`) |
 
+### Media playback
+
+`has_media()` and `open_media(name, path, options)` open an audio/video file from the session sandbox as a player that the server plays. The player has `play` / `pause` / `stop` / `seek` / `set_volume` / `set_loop` / `status` / `close` and events (state changed, ended, error). Its video shows in a `Video` widget whose `player` is `name`. In the C ABI these are `wish_media_available()`, `wish_media_open()` and the `wish_media_*` functions on a `wish_media_handle`. A server without media support reports `WISH_ERR_UNAVAILABLE`. See [docs/media.md](media.md) for every binding's spelling.
+
+| Binding | Call |
+|---------|------|
+| C++ binding | `auto p = c.open_media("intro", "intro.mp4"); p.play();` |
+| Python | `p = c.open_media("intro", "intro.mp4", autoplay=True)` |
+| C# | `using var p = c.OpenMedia("intro", "intro.mp4", autoplay: true);` |
+| Rust | `let p = c.open_media("intro", "intro.mp4", &MediaOptions::default())?;` |
+| Go | `p, err := c.OpenMedia("intro", "intro.mp4", wish.DefaultMediaOptions())` |
+| Java (Android) | `MediaPlayer p = c.openMedia("intro", "intro.mp4"); p.play();` |
+
 ### Translations
 
 `set_translations(text, fallback)` sets the `KEY = value` translations that `register_template` applies to `"$$KEY"` strings. `translate("$$KEY")` translates one string, and `set_language("es")` selects the language server-side tools use. Every binding has the same three calls (`SetTranslations` / `Translate` / `SetLanguage` in C# and Go, `setTranslations` / `translate` / `setLanguage` on Android); Python and C# add `load_translations(path, fallback_path)` / `LoadTranslations`. See [docs/i18n.md](i18n.md).

@@ -6,12 +6,14 @@
 #include <server/renderer.hpp>
 
 #include "src/bison/bison_common.hpp"
+#include "src/bison/bison_sync.hpp"
 
 #include <imgui.h>
 
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -186,6 +188,10 @@ class imgui_renderer : public renderer {
   ///        caller has not done so (useful for headless/test contexts).
   ///        Also clears `ambient_dockspace_id()` back to 0.
   void begin_frame() override;
+
+  /// @brief Frees dynamic textures dropped since the last frame once the
+  ///        backend destroyed its copy (called by `begin_frame()`).
+  void release_retired_textures();
 
   /// @brief The ImGui dockspace id that an un-positioned, dockable top-level
   ///        `Window` docks into by default this frame (see `render_window`).
@@ -433,6 +439,22 @@ class imgui_renderer : public renderer {
   virtual ImVec2 texture_size(const std::string& src) const;
 
   /**
+   * @brief Creates an `ImTextureData`-backed texture registered as an ImGui
+   *        user texture (see `renderer::create_dynamic_texture()`).
+   *
+   * Both SDLRenderer3 and the web renderer upload `ImTextureData` changes
+   * (WantCreate/WantUpdates/WantDestroy) themselves, so one implementation
+   * serves every imgui backend. Draw it through an `ImTextureRef` whose
+   * `_TexData` is `static_cast<ImTextureData*>(t->native_handle())` (not
+   * `ImTextureRef(ptr)`, which would treat the pointer as a backend id).
+   *
+   * @return Null when the backend can't upload textures
+   *         (`ImGuiBackendFlags_RendererHasTextures` unset, e.g. headless),
+   *         or for a size outside 1..4096.
+   */
+  dynamic_texture_ptr create_dynamic_texture(int w, int h) override;
+
+  /**
    * @brief Fetch a cached font or schedule loading the TTF at @p path with
    *        @p size pixels.
    *
@@ -504,6 +526,15 @@ class imgui_renderer : public renderer {
  protected:
   /// Loaded texture cache: maps resource path → ImTextureID.
   std::unordered_map<std::string, ImTextureID> texture_cache_;
+
+  /// Dynamic textures whose last reference was dropped (on any thread);
+  /// `begin_frame()` asks the backend to destroy them, then frees them.
+  using retired_textures = bison::synchronized<std::vector<std::unique_ptr<ImTextureData>>>;
+  std::shared_ptr<retired_textures> retired_textures_{std::make_shared<retired_textures>()};
+
+  /// Retired textures waiting for the backend to report them destroyed.
+  /// Render thread only.
+  std::vector<std::unique_ptr<ImTextureData>> dying_textures_;
 
   /// The screen rect `render_node()` resolved for the most recently
   /// dispatched node -- for most classes, the bounding box of everything

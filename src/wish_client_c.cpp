@@ -36,6 +36,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <algorithm>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -122,6 +123,14 @@ class c_abi_app_host : public wish::wish_app_host {
     return client_.dismiss_notification(id);
   }
 
+  bool has_media() const override {
+    return client_.has_media();
+  }
+  std::future<wish::media_player> open_media(
+      const std::string& name, const std::string& path, const wish::media_options& options) override {
+    return client_.open_media(name, path, options);
+  }
+
   bool has_user_store() const override {
     return client_.has_user_store();
   }
@@ -172,6 +181,30 @@ class c_abi_app_host : public wish::wish_app_host {
   bool done_ = false;
 };
 
+/// One wish_media_open() player: the client-side handle plus its owner (for
+/// wish_last_error()) and the C event callback.
+struct wish_media_handle_ {
+  /// What the player's event handlers forward to. Shared with them, so an
+  /// event arriving after the handle was freed finds a cleared callback
+  /// instead of a dangling handle.
+  struct callback_slot {
+    wish_media_handle_* self = nullptr;
+    wish_media_event_fn fn = nullptr;
+    void* userdata = nullptr;
+  };
+
+  wish_media_handle_() {
+    callback->wlock()->self = this;
+  }
+  ~wish_media_handle_() {
+    *callback->wlock() = callback_slot{};
+  }
+
+  wish_client_handle_* owner = nullptr;
+  wish::media_player player;
+  std::shared_ptr<synchronized<callback_slot>> callback{std::make_shared<synchronized<callback_slot>>()};
+};
+
 struct wish_client_handle_ {
   // Only engaged by wish_client_term_create(). Declared before client_ so
   // that member destruction order (reverse of declaration) tears client_
@@ -206,6 +239,10 @@ struct wish_client_handle_ {
   std::fstream stream_storage_;
 
   std::string last_error_;
+
+  // Players from wish_media_open() not yet closed; freed with the client.
+  // Declared after client_ so they are freed while it is still alive.
+  synchronized<std::vector<std::unique_ptr<wish_media_handle_>>> media_;
 
   // Futures of wish_sync_resource_package() calls. Declared after client_
   // so that, on destruction, these (std::async) futures block until their
@@ -1015,6 +1052,163 @@ extern "C" wish_error wish_settings_read(wish_client_handle c, const char* setti
     c->last_error_ = e.what();
     return WISH_ERR_EXCEPTION;
   }
+}
+
+// ── Media playback ────────────────────────────────────────────────────────────
+
+namespace {
+
+// Runs @p fn on @p m's player, converting exceptions to WISH_ERR_EXCEPTION
+// with the message in the owning client's wish_last_error().
+template <class Fn>
+wish_error media_call(wish_media_handle m, Fn&& fn) {
+  if (!m)
+    return WISH_ERR_NULL;
+  try {
+    fn(m->player);
+    return WISH_OK;
+  } catch (const std::exception& e) {
+    m->owner->last_error_ = e.what();
+    return WISH_ERR_EXCEPTION;
+  }
+}
+
+using media_callback = std::shared_ptr<synchronized<wish_media_handle_::callback_slot>>;
+
+void deliver_media_event(const media_callback& slot, int32_t event, int32_t state, const std::string& message) {
+  // Called under the read lock: wish_media_close() / the handle's
+  // destructor wait for a running callback before freeing the handle.
+  auto cb = slot->rlock();
+  if (cb->fn && cb->self)
+    cb->fn(cb->self, event, state, message.c_str(), cb->userdata);
+}
+
+} // namespace
+
+extern "C" wish_error wish_media_available(wish_client_handle c, int* out_avail) {
+  if (!c || !out_avail)
+    return WISH_ERR_NULL;
+  *out_avail = c->client_->has_media() ? 1 : 0;
+  return WISH_OK;
+}
+
+extern "C" wish_error wish_media_open(
+    wish_client_handle c, const char* name, const char* path, int32_t flags, float volume, wish_media_handle* out) {
+  if (!c || !name || !path || !out)
+    return WISH_ERR_NULL;
+  *out = nullptr;
+  if (!c->client_->has_media())
+    return WISH_ERR_UNAVAILABLE;
+  try {
+    wish::media_options options;
+    options.autoplay = (flags & WISH_MEDIA_AUTOPLAY) != 0;
+    options.loop = (flags & WISH_MEDIA_LOOP) != 0;
+    options.volume = volume;
+    auto handle = std::make_unique<wish_media_handle_>();
+    handle->owner = c;
+    handle->player = c->client_->open_media(name, path, options).get();
+    // Handlers stay registered for the player's lifetime and forward to
+    // whatever callback wish_media_on_event() set last.
+    media_callback slot = handle->callback;
+    handle->player.on_state_changed([slot](wish::media_state st) {
+      deliver_media_event(slot, WISH_MEDIA_EVENT_STATE, static_cast<int32_t>(st), "");
+    });
+    handle->player.on_ended([slot] { deliver_media_event(slot, WISH_MEDIA_EVENT_ENDED, WISH_MEDIA_STATE_ENDED, ""); });
+    handle->player.on_error([slot](const std::string& message) {
+      deliver_media_event(slot, WISH_MEDIA_EVENT_ERROR, WISH_MEDIA_STATE_ERROR, message);
+    });
+    wish_media_handle raw = handle.get();
+    c->media_.wlock()->push_back(std::move(handle));
+    *out = raw;
+    return WISH_OK;
+  } catch (const std::exception& e) {
+    c->last_error_ = e.what();
+    return WISH_ERR_EXCEPTION;
+  }
+}
+
+extern "C" wish_error wish_media_play(wish_media_handle m) {
+  return media_call(m, [](wish::media_player& p) { p.play().get(); });
+}
+
+extern "C" wish_error wish_media_pause(wish_media_handle m) {
+  return media_call(m, [](wish::media_player& p) { p.pause().get(); });
+}
+
+extern "C" wish_error wish_media_stop(wish_media_handle m) {
+  return media_call(m, [](wish::media_player& p) { p.stop().get(); });
+}
+
+extern "C" wish_error wish_media_seek(wish_media_handle m, double seconds) {
+  return media_call(m, [seconds](wish::media_player& p) { p.seek(seconds).get(); });
+}
+
+extern "C" wish_error wish_media_set_volume(wish_media_handle m, float volume) {
+  return media_call(m, [volume](wish::media_player& p) { p.set_volume(volume).get(); });
+}
+
+extern "C" wish_error wish_media_set_loop(wish_media_handle m, int32_t loop) {
+  return media_call(m, [loop](wish::media_player& p) { p.set_loop(loop != 0).get(); });
+}
+
+extern "C" wish_error wish_media_get_status(wish_media_handle m, wish_media_status* out) {
+  if (!out)
+    return WISH_ERR_NULL;
+  return media_call(m, [out](wish::media_player& p) {
+    const auto st = p.status().get();
+    out->position = st.position;
+    out->duration = st.duration;
+    out->volume = st.volume;
+    out->state = static_cast<int32_t>(st.state);
+    out->width = st.width;
+    out->height = st.height;
+    out->has_video = st.has_video ? 1 : 0;
+    out->has_audio = st.has_audio ? 1 : 0;
+    out->loop = st.loop ? 1 : 0;
+    out->audio_output = st.audio_output ? 1 : 0;
+  });
+}
+
+extern "C" wish_error wish_media_get_error(wish_media_handle m, char** out_text) {
+  if (!out_text)
+    return WISH_ERR_NULL;
+  *out_text = nullptr;
+  return media_call(m, [out_text](wish::media_player& p) {
+    const std::string text = p.status().get().error;
+    char* buf = new char[text.size() + 1];
+    std::memcpy(buf, text.c_str(), text.size() + 1);
+    *out_text = buf;
+  });
+}
+
+extern "C" wish_error wish_media_on_event(wish_media_handle m, wish_media_event_fn fn, void* userdata) {
+  if (!m)
+    return WISH_ERR_NULL;
+  auto slot = m->callback->wlock();
+  slot->fn = fn;
+  slot->userdata = userdata;
+  return WISH_OK;
+}
+
+extern "C" wish_error wish_media_close(wish_media_handle m) {
+  if (!m)
+    return WISH_ERR_NULL;
+  m->callback->wlock()->fn = nullptr;
+  try {
+    m->player.close().get();
+  } catch (...) {
+    // The session may be gone; the handle is freed regardless.
+  }
+  std::unique_ptr<wish_media_handle_> owned;
+  {
+    auto media = m->owner->media_.wlock();
+    auto it = std::find_if(media->begin(), media->end(), [m](const auto& h) { return h.get() == m; });
+    if (it != media->end()) {
+      owned = std::move(*it);
+      media->erase(it);
+    }
+  }
+  return WISH_OK;
 }
 
 // ── Notifications ─────────────────────────────────────────────────────────────
