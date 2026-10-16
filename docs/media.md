@@ -41,7 +41,10 @@ player.on_ended([] { std::puts("done"); });
 ```
 
 `examples/media_player/` is a complete version with Play/Pause/Stop, a
-seek bar and a volume slider.
+seek bar and a volume slider. The bundled **mpv** tool
+([modules/bdg/desktop/mpv](../modules/bdg/desktop/mpv/README.md),
+`wish client --run=mpv`) is a full player built the same way: it uploads
+local files to the sandbox and plays them.
 
 ## The sandbox rule
 

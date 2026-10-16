@@ -726,6 +726,15 @@ def test_saving_shows_confirmation(wish_ui):
   `imgui_ui_renderer.cpp`). SDL3 frames can't be checked this way because
   of the native-automation hang above; smoke-run `examples/media_player
   --renderer sdl3` instead.
+- **Clicks starve while a video plays (web renderer, headless Chromium)**
+  (verified 2026-10, mpv): every new video frame redraws the whole page in
+  software (SwiftShader). From about 320x180 at 25 fps up, Playwright's
+  `mouse.click()` can then block until the timeout, and the page stops
+  answering. The server isn't stuck (its threads are idle in gdb). Do every
+  click *before* starting playback, and only screenshot while it plays. A
+  clip that ends frees the page again. Clicks on a table row right after an
+  upload, or a Ctrl+click, sometimes don't register either: confirm the
+  effect (e.g. the selection label) and retry.
 - **Don't stop servers with `pkill -f "<pattern>"` from an agent shell**:
   the shell running the command has the pattern in its own command line,
   so it matches and kills itself (exit 143/144, with no output). Kill by PID

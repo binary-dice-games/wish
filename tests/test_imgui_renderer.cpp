@@ -1226,6 +1226,42 @@ TEST_F(ImguiRendererTest, HorizontalLayoutWithThreeButtonsDoesNotThrow) {
   });
 }
 
+// A hidden first child of a HorizontalLayout must not take the row with
+// it: invisible children are skipped entirely (no empty group, no SameLine),
+// so the visible ones lay out as if it weren't there.
+TEST_F(ImguiRendererTest, HorizontalLayoutSkipsHiddenChildren) {
+  constexpr auto desc = R"({
+    "type": "VerticalLayout",
+    "children": {
+      "row": {
+        "type": "HorizontalLayout",
+        "spacing": 6.0,
+        "children": {
+          "hidden": { "type": "Button", "label": "Hidden", "visible": false },
+          "shown":  { "type": "Button", "label": "Shown" },
+          "next":   { "type": "Button", "label": "Next" }
+        }
+      },
+      "below": { "type": "Button", "label": "Below" }
+    }
+  })";
+  auto map = bdg::wish::import_json(desc);
+  for (int frame = 0; frame < 3; ++frame) {
+    renderer_->begin_frame();
+    in_window([&] { renderer_->render_node(*map[""], *sess_); });
+    renderer_->end_frame();
+  }
+  auto size_of = [&](const char* path) { return map[path]->last_rendered_size(); };
+  EXPECT_GT(size_of("row.shown").x, 0.0f) << "the visible button rendered";
+  EXPECT_GT(size_of("row.next").x, 0.0f);
+  EXPECT_GT(size_of("below").x, 0.0f);
+  const auto row = size_of("row");
+  const auto shown = size_of("row.shown");
+  const auto next = size_of("row.next");
+  EXPECT_NEAR(row.x, shown.x + 6.0f + next.x, 1.0f) << "no gap or width left by the hidden child";
+  EXPECT_NEAR(row.y, shown.y, 1.0f);
+}
+
 TEST_F(ImguiRendererTest, NestedLayoutTreeRendersWithoutError) {
   constexpr auto desc = R"({
     "type": "Window",

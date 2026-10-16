@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Media playback (see [docs/media.md](docs/media.md)): clients play audio and video files from their sandbox on the server, which decodes them with FFmpeg and plays the sound with miniaudio; clients link no media library. `open_media()` / `has_media()` on `wish::client`, `wish::standalone` and `wish_app_host` return a `wish::media_player` (`play`, `pause`, `stop`, `seek`, `set_volume`, `set_loop`, `status`, `close`; `state_changed` / `ended` / `error` events). C ABI `wish_media_available()` / `wish_media_open()` / `wish_media_*` on a `wish_media_handle`; `open_media` / `OpenMedia` / `openMedia` and a `MediaPlayer` in the C++, Python, C#, Rust, Go and Java bindings.
+- `bdg/desktop/mpv` module, **Media Player** (`wish client --run=mpv -- [FOLDER]`): lists the client's local media files, uploads them to the sandbox's `media/` folder (double-click to upload and play), and plays the sandbox's library with a video view, seek bar, play/pause, stop, loop and volume.
 - `Video` widget showing a media player's frames (`player`, `width`, `height`, `keep_aspect`, `tint`; emits `clicked`), and `Image.src = "media://<player>"`.
 - `WISH_ENABLE_MEDIA` CMake option (on by default; turned off at configure time when FFmpeg's development libraries are missing).
 - `renderer::create_dynamic_texture()`: textures whose pixels the server rewrites every frame, on the SDL3 and web renderers.
@@ -131,6 +132,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A hidden child of a `HorizontalLayout` no longer leaves a gap, and a hidden first child no longer takes the rest of the row out of view.
 - Opening or closing an instance of a tool no longer detaches the panels of another open instance of the same tool: an instance's window names no longer change while it is open (they depended on the order of random object ids). Two clients running the same tool on one server no longer share windows either.
 - `wish desktop`: starting several instances of one tool no longer asserts on a shared dockspace; each instance gets its own.
 - Web renderer: the punctuation keys (`-` `=` `,` `.` `/` `;` `\`) and the numeric keypad now reach the server as keys, not only as typed characters, so shortcuts using them work in the browser.

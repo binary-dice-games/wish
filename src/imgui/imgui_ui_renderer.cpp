@@ -1529,6 +1529,11 @@ void render_horizontal_layout(imgui_renderer& r, const ui_element& node0, const 
 
   bool first = true;
   node.for_each_child_ordered([&](key_t, ui_element& child) {
+    // A hidden child takes no part in the row: no SameLine() gap and no
+    // empty BeginGroup()/EndGroup() pair, which corrupts the next item's
+    // cursor math (a hidden *first* child took the whole row out).
+    if (!child.visible())
+      return;
     if (!first)
       ImGui::SameLine();
     first = false;
