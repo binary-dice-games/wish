@@ -69,6 +69,52 @@ WISH_ERROR_MESSAGES = {
 # void (*wish_session_fn)(wish_client_handle client, void* userdata)
 SessionFn = ctypes.CFUNCTYPE(None, ClientHandle, ctypes.c_void_p)
 
+# wish_sync_state
+WISH_SYNC_PROGRESS = 0
+WISH_SYNC_UPLOADED = 1
+WISH_SYNC_CACHED = 2
+WISH_SYNC_FAILED = 3
+
+# void (*wish_resource_sync_fn)(wish_client_handle client, const char* name,
+#     wish_sync_state state, uint64_t transferred, uint64_t total,
+#     const char* error, void* userdata)
+ResourceSyncFn = ctypes.CFUNCTYPE(
+    None, ClientHandle, ctypes.c_char_p, ctypes.c_int, ctypes.c_uint64, ctypes.c_uint64, ctypes.c_char_p, ctypes.c_void_p
+)
+
+# ─── Media playback ─────────────────────────────────────────────────────────
+
+MediaHandle = ctypes.c_void_p  # wish_media_handle
+
+WISH_MEDIA_AUTOPLAY = 1
+WISH_MEDIA_LOOP = 2
+
+WISH_MEDIA_EVENT_STATE = 0
+WISH_MEDIA_EVENT_ENDED = 1
+WISH_MEDIA_EVENT_ERROR = 2
+
+
+class MediaStatus(ctypes.Structure):
+    """``wish_media_status``."""
+
+    _fields_ = [
+        ("position", ctypes.c_double),
+        ("duration", ctypes.c_double),
+        ("volume", ctypes.c_float),
+        ("state", ctypes.c_int32),
+        ("width", ctypes.c_int32),
+        ("height", ctypes.c_int32),
+        ("has_video", ctypes.c_int32),
+        ("has_audio", ctypes.c_int32),
+        ("loop", ctypes.c_int32),
+        ("audio_output", ctypes.c_int32),
+    ]
+
+
+# void (*wish_media_event_fn)(wish_media_handle media, int32_t event,
+#     int32_t state, const char* message, void* userdata)
+MediaEventFn = ctypes.CFUNCTYPE(None, MediaHandle, ctypes.c_int32, ctypes.c_int32, ctypes.c_char_p, ctypes.c_void_p)
+
 # ─── Library loading ────────────────────────────────────────────────────────
 
 
@@ -256,6 +302,18 @@ def _setup_wish_signatures(lib: ctypes.CDLL) -> None:
     lib.wish_upload_package_from_path.restype = Error
     lib.wish_upload_package_from_path.argtypes = [ClientHandle, ctypes.c_char_p, ctypes.c_char_p]
 
+    lib.wish_sync_resource_package.restype = Error
+    lib.wish_sync_resource_package.argtypes = [
+        ClientHandle,
+        ctypes.c_char_p,
+        ctypes.c_char_p,
+        ctypes.c_char_p,
+        ResourceSyncFn,
+        ctypes.c_void_p,
+    ]
+    lib.wish_wait_resource_syncs.restype = Error
+    lib.wish_wait_resource_syncs.argtypes = [ClientHandle]
+
     # ── Logging ──────────────────────────────────────────────────────────────
     # ── User store ───────────────────────────────────────────────────────────
     lib.wish_user_store_available.restype = Error
@@ -282,6 +340,58 @@ def _setup_wish_signatures(lib: ctypes.CDLL) -> None:
 
     lib.wish_settings_read.restype = Error
     lib.wish_settings_read.argtypes = [ClientHandle, ctypes.c_char_p, P(ctypes.c_char_p)]
+
+    # ── Notifications ────────────────────────────────────────────────────────
+    lib.wish_notify.restype = Error
+    lib.wish_notify.argtypes = [
+        ClientHandle,
+        ctypes.c_char_p,
+        ctypes.c_char_p,
+        ctypes.c_int32,
+        ctypes.c_char_p,
+        ctypes.c_int32,
+        ctypes.c_char_p,
+        P(ctypes.c_uint64),
+    ]
+
+    lib.wish_notify_dismiss.restype = Error
+    lib.wish_notify_dismiss.argtypes = [ClientHandle, ctypes.c_uint64]
+
+    # ── Media playback ───────────────────────────────────────────────────────
+    lib.wish_media_available.restype = Error
+    lib.wish_media_available.argtypes = [ClientHandle, P(ctypes.c_int)]
+
+    lib.wish_media_open.restype = Error
+    lib.wish_media_open.argtypes = [
+        ClientHandle,
+        ctypes.c_char_p,
+        ctypes.c_char_p,
+        ctypes.c_int32,
+        ctypes.c_float,
+        P(MediaHandle),
+    ]
+
+    for name in ("wish_media_play", "wish_media_pause", "wish_media_stop", "wish_media_close"):
+        getattr(lib, name).restype = Error
+        getattr(lib, name).argtypes = [MediaHandle]
+
+    lib.wish_media_seek.restype = Error
+    lib.wish_media_seek.argtypes = [MediaHandle, ctypes.c_double]
+
+    lib.wish_media_set_volume.restype = Error
+    lib.wish_media_set_volume.argtypes = [MediaHandle, ctypes.c_float]
+
+    lib.wish_media_set_loop.restype = Error
+    lib.wish_media_set_loop.argtypes = [MediaHandle, ctypes.c_int32]
+
+    lib.wish_media_get_status.restype = Error
+    lib.wish_media_get_status.argtypes = [MediaHandle, P(MediaStatus)]
+
+    lib.wish_media_get_error.restype = Error
+    lib.wish_media_get_error.argtypes = [MediaHandle, P(ctypes.c_char_p)]
+
+    lib.wish_media_on_event.restype = Error
+    lib.wish_media_on_event.argtypes = [MediaHandle, MediaEventFn, ctypes.c_void_p]
 
     lib.wish_log.restype = Error
     lib.wish_log.argtypes = [ClientHandle, ctypes.c_char_p, ctypes.c_char_p]

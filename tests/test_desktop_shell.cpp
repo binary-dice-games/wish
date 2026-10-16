@@ -306,7 +306,7 @@ TEST_F(DesktopShellTest, CollectAppsFlattensTheTree) {
   EXPECT_FALSE(apps[1].pinned);
 }
 
-TEST_F(DesktopShellTest, ShutdownFieldRunsTheCallbackOnce) {
+TEST_F(DesktopShellTest, ShutdownFieldRunsTheCallbackOncePerRequest) {
   auto shell = add_top(kShell, 1u);
   int calls = 0;
   auto frame_with = [&] {
@@ -321,6 +321,11 @@ TEST_F(DesktopShellTest, ShutdownFieldRunsTheCallbackOnce) {
   frame_with();
   frame_with();
   EXPECT_EQ(calls, 1);
+  EXPECT_FALSE(shell->get_as<bool>("shutdown"_key, true)); // reset once seen
+  // A second request (after the confirmation was cancelled) runs it again.
+  (*shell)["shutdown"_key] = true;
+  frame_with();
+  EXPECT_EQ(calls, 2);
 }
 
 TEST_F(DesktopShellTest, CollectsVisibleNonModalWindowsWithTheirApp) {

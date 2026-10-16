@@ -90,7 +90,6 @@ struct desktop_shell_state {
   /// Windows minimized by "show desktop", restored by its second click.
   std::vector<std::pair<const sync_context*, bison::key_t>> shown_desktop;
   std::string selected_icon;
-  bool shutdown_requested{false}; ///< The shell's `shutdown` was acted on.
   /// Ids of the Start menu folders the user expanded.
   std::set<std::string> expanded_folders;
   int calendar_year{0};
@@ -124,8 +123,9 @@ struct desktop_shell_state {
  * @param r                The renderer drawing the frame.
  * @param sessions         Snapshot of the connected sessions.
  * @param state            Cross-frame UI state, owned by the caller.
- * @param shutdown_server  Run when the shell's `shutdown` field is set (the
- *                         desktop's "shutdown_server" action).
+ * @param shutdown_server  Run each time the shell's `shutdown` field is set
+ *                         (the desktop's "shutdown_server" action); the
+ *                         field is reset to false.
  * @return true when a DesktopShell was found and drawn.
  */
 bool render_desktop_shell(

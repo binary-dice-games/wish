@@ -5,9 +5,14 @@
 #include <server/registry.hpp>
 #include <context/style_service.hpp>
 #include <context/user_store_service.hpp>
+#include <server/notification_service.hpp>
 
 #ifdef WISH_AUTOMATION_ENABLED
 #include <automation/automation_service.hpp>
+#endif
+
+#ifdef WISH_MEDIA_ENABLED
+#include <media/media_service.hpp>
 #endif
 
 #include "ui/forms/file_dialog.hpp"
@@ -36,6 +41,7 @@ void register_all() {
   register_slider(); // SliderFloat and SliderInt
   register_input_text();
   register_image();
+  register_video();
   register_separator();
   register_menu();
   register_desktop_shell();
@@ -74,6 +80,10 @@ void register_all() {
   register_style_service();
   register_user_store_service();
   register_logger();
+  register_notification_service();
+#ifdef WISH_MEDIA_ENABLED
+  media::register_media_service();
+#endif
 #ifdef WISH_AUTOMATION_ENABLED
   register_automation_service();
 #endif

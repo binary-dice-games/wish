@@ -205,6 +205,9 @@ static natural_size measure_horizontal_layout(imgui_renderer& r, const ui_elemen
   float max_h = 0.0f;
   int n = 0;
   node.for_each_child_ordered([&](key_t, ui_element& child) {
+    // A hidden child takes no part in the row (see render_horizontal_layout()).
+    if (!child.visible())
+      return;
     bool is_spring = child.class_key() == "Spring"_key;
     natural_size child_sz = measure_node(r, child, s);
     if (!is_spring) {
@@ -518,6 +521,8 @@ static void arrange_horizontal_layout(imgui_renderer& r, const ui_element& node,
   float stretch_weight_total = 0.0f;
   int n = 0;
   node.for_each_child_ordered([&](key_t, ui_element& child) {
+    if (!child.visible())
+      return; // takes no part in the row (see render_horizontal_layout())
     bool is_spring = child.class_key() == "Spring"_key;
     if (is_spring) {
       float weight = std::max(0.0f, child.weight(1.0f));

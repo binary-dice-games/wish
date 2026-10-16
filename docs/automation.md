@@ -356,9 +356,13 @@ e.g. `--run du --arg /usr/share` for `wish client --run=du -- /usr/share`.
 tool (verified 2026-10: `--run tail --lang es` shows "Controles", "Seguir",
 "3 líneas"; see [docs/i18n.md](i18n.md)). A translated label is also
 the widget's ImGui id, so match widgets by path, not by label.
-`--username NAME` connects the client with that identity, which gives it a
-persistent user store (curl needs one for Collections / Environments,
-otherwise its Console shows a red "user store" error).
+`--username NAME` connects the client with that identity (default: the OS
+user, which also shows up in the UI -- pass a sample name such as `alice`
+for screenshots). An identity gives the client a persistent user store
+(curl needs one for Collections / Environments, otherwise its Console shows
+a red "user store" error). Run the server with `--wish_home <scratch>` (or
+`WISH_HOME=<scratch>`) so the session's profile and sandbox don't land in
+the real `~/.wish`.
 
 This recipe also produces the `<name>.png` screenshot every tool keeps next
 to its `README.md` (see `CLAUDE.md`, "Tool READMEs and screenshots").
@@ -433,7 +437,7 @@ Gotchas this recipe already handles:
 ## Recipe: drive `wish desktop`
 
 Verified in a Claude Code cloud container (2026-10). Start the server under
-`AutomationClient` as in the recipe above (add `--store_dir <scratch>` so the
+`AutomationClient` as in the recipe above (add `--wish_home <scratch>` so the
 desktop's saved pins/theme don't land in `~/.wish`), then start the desktop
 against it with `subprocess.Popen`:
 
@@ -443,6 +447,14 @@ desk = subprocess.Popen([wish, "desktop", "--upstream_transport", "tcp", "--upst
                         stdin=subprocess.PIPE, stdout=log, stderr=subprocess.STDOUT, cwd=scratch)
 ```
 
+- **Or skip the separate server: `wish desktop --with_server --renderer web
+  --web_port <free port>`** runs both in one process (verified 2026-10).
+  Start it with `subprocess.Popen` as above, wait for the web port, then
+  attach with `AutomationClient.launch(url="http://127.0.0.1:<port>")`
+  rather than `server_cmd=`. Pass `--wish_home <scratch>` to the desktop
+  itself (it covers the server, the desktop config and the app logs); `exit` on its stdin closes the server too (the web port goes
+  away). `__WishDesktop.shutdown_server` only opens the server's "Shut
+  down the server?" confirmation; click **Shut down** in it to stop.
 - **Keep the desktop's stdin open** (`stdin=subprocess.PIPE`): it spawns an
   anchor terminal fed from stdin and quits when that terminal exits.
 - **The desktop chrome is not in `get_tree()`.** The taskbar, Start menu,
@@ -453,15 +465,19 @@ desk = subprocess.Popen([wish, "desktop", "--upstream_transport", "tcp", "--upst
   dark theme, so a pinned icon at x=132 in light moved to x=112 in dark.
 - **Apps started from the desktop are real processes**: check them with
   `pgrep -af "wish client"`; their output is in
-  `<desktop cwd>/wish_logs/desktop/<app>_<n>.log`. Windows they open do show
+  `<wish_home>/logs/desktop/<app>_<n>.log`. Windows they open do show
   up in `get_tree()` as usual.
 - **Ctrl+Tab never reaches the page** in Chromium; the switcher also
   answers to Ctrl+\` (`keyboard.down("Control")`, `press("Backquote")`,
   screenshot, `keyboard.up("Control")`).
-- **Theme and pins persist between runs** in `--store_dir`: delete it for a
+- **The tray's theme button opens a menu** of every registered theme
+  (1440x900, light theme: the button at (1270, 874); the menu opens upward,
+  items about 22 px apart, Wish at y≈762 down to Classic at y≈828). Picking
+  one restyles the desktop within a second (verified 2026-10).
+- **Theme and pins persist between runs** in `--wish_home`: delete it for a
   clean first run (nano, mc and top pinned, light theme).
-- **Pass `--config <scratch>/desktop.yaml`** so the desktop doesn't write
-  `~/.wish/desktop/desktop.yaml`. Rewriting that file while the desktop runs
+- **Pass `--wish_home <scratch>` (or `--config <scratch>/desktop.yaml`)** so
+  the desktop doesn't write `~/.wish/users/<user>/desktop/desktop.yaml`. Rewriting that file while the desktop runs
   rebuilds the Start menu within about a second, which is the quickest way
   to try a menu layout. A broken file shows its error in red at the top of
   the Start menu, which is easy to miss if the menu is closed in the
@@ -695,6 +711,61 @@ def test_saving_shows_confirmation(wish_ui):
 
 ## Gotchas
 
+- **Verifying media playback (video frames)** (verified 2026-10, web
+  renderer; see [media.md](media.md)): render a known video, sample pixels
+  from the screenshot, and check what changes. Run a `wish.Client` on a
+  thread that uploads the file, calls `open_media()`, instantiates a
+  template with a `Video` (and/or an `Image` with `src = "media://<name>"`),
+  then seeks. Keep the `instantiate_template()` result in a variable, or
+  the window is destroyed (see the premature-destroy point above). Then
+  `AutomationClient` reads the widget's `rect`, takes `screenshot()`, and
+  samples the rect's center with PIL. A two-color clip (solid red for 2 s,
+  then green; `tests/media_test_files.hpp`'s `write_red_green_video()`
+  writes one, compiled with `pkg-config --libs libavformat libavcodec
+  libavutil`) gives an unambiguous before/after for a `seek(3.0)`. Wait
+  ~1 s after open or seek for the frame to reach the browser. A frame
+  that reads pure white (255, 255, 255) means the browser got a texture id
+  it has no pixels for. That happened once because an `ImTextureData*` was
+  passed as `ImTextureRef(ptr)` (see `texture_ref()` in
+  `imgui_ui_renderer.cpp`). SDL3 frames can't be checked this way because
+  of the native-automation hang above; smoke-run `examples/media_player
+  --renderer sdl3` instead.
+- **Clicks starve while a video plays (web renderer, headless Chromium)**
+  (verified 2026-10, mpv): every new video frame redraws the whole page in
+  software (SwiftShader). From about 320x180 at 25 fps up, Playwright's
+  `mouse.click()` can then block until the timeout, and the page stops
+  answering. The server isn't stuck (its threads are idle in gdb). Do every
+  click *before* starting playback, and only screenshot while it plays. A
+  clip that ends frees the page again. Clicks on a table row right after an
+  upload, or a Ctrl+click, sometimes don't register either: confirm the
+  effect (e.g. the selection label) and retry.
+- **Don't stop servers with `pkill -f "<pattern>"` from an agent shell**:
+  the shell running the command has the pattern in its own command line,
+  so it matches and kills itself (exit 143/144, with no output). Kill by PID
+  instead (`for p in $(pgrep -x wish); do kill $p; done`).
+
+- **The server overlay and toasts are host chrome, not widgets** (verified
+  2026-10, web renderer): `get_tree()` never lists them. Open the overlay
+  with `page.keyboard.press("Shift+F1", delay=80)` (move the mouse over
+  the page first) and drive it by coordinates read off a screenshot: at
+  1440x900 the page tabs sit at y≈35 (Overview, Clients, Performance,
+  Settings, Logs, About from x≈440 to x≈1005; Performance at x≈706), the
+  bottom bar's **Screenshot** at (80, 868) and **Shut down server** at the
+  bottom right. `press("Escape")` closes it. The Screenshot button works
+  under Playwright (the headless page answers the server's capture
+  request), and a toast with the saved path follows within a second;
+  client notifications posted from a Python `Client.notify()` show up the
+  same way (verified 2026-10). `AutomationClient.launch()` appends
+  `--overlay_hotkey=` (no overlay, and no "press Shift+F1" toast covering
+  the bottom-right corner for 10 s) unless the command sets the flag, so
+  pass `--overlay_hotkey=Shift+F1` to drive the overlay. See
+  [server-overlay.md](server-overlay.md).
+- **Check the overlay's "open folder/file" buttons with a fake `xdg-open`**
+  (verified 2026-10): put a script named `xdg-open` that appends `"$@"` to a
+  file first on the server's `PATH`, click, and read the file -- it shows the
+  exact path the server tried to open, without a real file manager window
+  (and, on WSL, without the `explorer.exe` fallback popping a window on the
+  Windows desktop).
 - **Keyboard-only flows are drivable with `page.keyboard`** (verified
   2026-10, web renderer): click the window once so it has focus, then
   `keyboard.down("Alt")` shows the access-key underlines for a screenshot,

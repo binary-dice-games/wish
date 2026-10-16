@@ -50,6 +50,8 @@ public sealed class Client : IDisposable
 {
     private nint _handle;
     private object? _sessionCallback; // keeps the native-callback delegate alive during Run()
+    // Native callbacks of running resource syncs, kept alive until their final call.
+    private readonly HashSet<NativeResourceSyncFn> _syncCallbacks = new();
 
     private Client(nint handle) => _handle = handle;
 
@@ -476,6 +478,90 @@ public sealed class Client : IDisposable
             $"upload_package_from_path({destPath})", LastError);
     }
 
+    // ── Resource packages ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Keeps a local zip of resources in sync with the session sandbox, in
+    /// the background.
+    /// </summary>
+    /// <remarks>
+    /// The server remembers which version (modified time and size) of
+    /// package <paramref name="name"/> it last unpacked; the zip is uploaded
+    /// and unpacked into <paramref name="destPath"/> (empty: the sandbox
+    /// root) only if it changed. Unpacking adds and overwrites files, never
+    /// deletes any. <paramref name="name"/> must be unique, e.g.
+    /// <c>"acme.game.level1"</c> (1-128 characters from <c>[A-Za-z0-9_.-]</c>).
+    /// Progress reports arrive on a background thread.
+    /// </remarks>
+    /// <returns>
+    /// A task resolving to <c>true</c> if the zip was uploaded, <c>false</c>
+    /// if it was already current; faulted with a <see cref="WishException"/>
+    /// on failure.
+    /// </returns>
+    /// <exception cref="WishException">The sync cannot start (e.g. a missing zip).</exception>
+    public Task<bool> SyncResourcePackage(
+        string name,
+        string localZipPath,
+        string destPath = "",
+        IProgress<(ulong Transferred, ulong Total)>? progress = null)
+    {
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        NativeResourceSyncFn? native = null;
+        native = (_, _, state, transferred, total, error, _) =>
+        {
+            try
+            {
+                switch ((ResourceSyncState)state)
+                {
+                    case ResourceSyncState.Progress:
+                        progress?.Report((transferred, total));
+                        return;
+                    case ResourceSyncState.Failed:
+                        tcs.TrySetException(new WishException(
+                            WishErrorCode.Exception, $"sync_resource_package({name})",
+                            Marshal.PtrToStringUTF8(error) ?? ""));
+                        break;
+                    default:
+                        tcs.TrySetResult((ResourceSyncState)state == ResourceSyncState.Uploaded);
+                        break;
+                }
+            }
+            catch
+            {
+                // C ABI boundary: cannot propagate.
+            }
+            lock (_syncCallbacks)
+            {
+                _syncCallbacks.Remove(native!);
+            }
+        };
+
+        lock (_syncCallbacks)
+        {
+            _syncCallbacks.Add(native);
+        }
+        int rc = Native.wish_sync_resource_package(
+            _handle, name, localZipPath, destPath, Marshal.GetFunctionPointerForDelegate(native), nint.Zero);
+        if (rc != (int)WishErrorCode.Ok)
+        {
+            lock (_syncCallbacks)
+            {
+                _syncCallbacks.Remove(native);
+            }
+        }
+        WishException.Check(rc, $"sync_resource_package({name})", LastError);
+        return tcs.Task;
+    }
+
+    /// <summary>
+    /// Blocks until every <see cref="SyncResourcePackage"/> on this client has
+    /// finished. Must not be called from a progress report.
+    /// </summary>
+    public void WaitResourceSyncs()
+    {
+        WishException.Check(Native.wish_wait_resource_syncs(_handle), "wait_resource_syncs", LastError);
+    }
+
     // ── User store ────────────────────────────────────────────────────────────
     //
     // A persistent store of named objects private to this session's identity
@@ -588,6 +674,63 @@ public sealed class Client : IDisposable
         }
     }
 
+    // ── Notifications ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Shows a toast notification on the server's screen and returns its id. The server shows
+    /// this session's identity on it and keeps at most 4 per session.
+    /// </summary>
+    /// <param name="title">First line; required.</param>
+    /// <param name="body">Text under the title.</param>
+    /// <param name="kind">Accent color and icon.</param>
+    /// <param name="duration">How long it stays; <see cref="TimeSpan.Zero"/> keeps it until dismissed (default 6 s).</param>
+    /// <param name="keys">Key combination drawn as key caps, e.g. "Ctrl+B".</param>
+    /// <param name="tag">Replaces this session's notification with the same tag.</param>
+    /// <exception cref="WishException">The server shows no notifications, or the title is empty.</exception>
+    public ulong Notify(
+        string title,
+        string body = "",
+        NotifyKind kind = NotifyKind.Info,
+        TimeSpan? duration = null,
+        string keys = "",
+        string tag = "")
+    {
+        int ms = (int)(duration ?? TimeSpan.FromSeconds(6)).TotalMilliseconds;
+        WishException.Check(Native.wish_notify(_handle, title, body, (int)kind, keys, ms, tag, out ulong id), "notify", LastError);
+        return id;
+    }
+
+    /// <summary>Removes one of this session's notifications early.</summary>
+    public void DismissNotification(ulong id) =>
+        WishException.Check(Native.wish_notify_dismiss(_handle, id), "dismiss_notification", LastError);
+
+    // ── Media playback ────────────────────────────────────────────────────────
+
+    /// <summary>Whether the server plays media (it was built with FFmpeg).</summary>
+    public bool HasMedia
+    {
+        get
+        {
+            WishException.Check(Native.wish_media_available(_handle, out int avail), "has_media", LastError);
+            return avail != 0;
+        }
+    }
+
+    /// <summary>
+    /// Opens <paramref name="path"/>, a file already uploaded to the session sandbox, as player
+    /// <paramref name="name"/>. The server plays it; show its video with a <c>Video</c> widget whose
+    /// <c>player</c> is <paramref name="name"/>. Absolute paths, <c>..</c> escapes and URLs are refused.
+    /// </summary>
+    /// <exception cref="WishException">The server plays no media, the path is refused or missing,
+    /// or the file isn't playable.</exception>
+    public MediaPlayer OpenMedia(string name, string path, bool autoplay = false, bool loop = false, float volume = 1.0f)
+    {
+        int flags = (autoplay ? 1 : 0) | (loop ? 2 : 0);
+        WishException.Check(
+            Native.wish_media_open(_handle, name, path, flags, volume, out nint media), $"open_media({name})", LastError);
+        return new MediaPlayer(media, name, LastError);
+    }
+
     // ── Logging ───────────────────────────────────────────────────────────────
 
     /// <summary>Sends a structured log message: <paramref name="level"/> is "debug"/"info"/"warn"/"error".</summary>
@@ -600,4 +743,22 @@ public sealed class Client : IDisposable
     public void LogWarn(string msg) => WishException.Check(Native.wish_log_warn(_handle, msg), "log_warn", LastError);
 
     public void LogError(string msg) => WishException.Check(Native.wish_log_error(_handle, msg), "log_error", LastError);
+}
+
+/// <summary>Severity of a notification: its accent color and icon (WISH_NOTIFY_*).</summary>
+public enum NotifyKind
+{
+    Info = 0,
+    Success = 1,
+    Warning = 2,
+    Error = 3,
+}
+
+/// <summary>State of a resource sync report (<c>wish_sync_state</c>).</summary>
+public enum ResourceSyncState
+{
+    Progress = 0,
+    Uploaded = 1,
+    Cached = 2,
+    Failed = 3,
 }

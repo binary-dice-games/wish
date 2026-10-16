@@ -23,6 +23,7 @@
 #include "error.hpp"
 #include "future.hpp"
 #include "key.hpp"
+#include "media.hpp"
 #include "proxy.hpp"
 #include "settings.hpp"
 #include "value.hpp"
@@ -362,6 +363,54 @@ class client {
         "client::upload_package(" + dest_path + ")", h_);
   }
 
+  // ── Resource packages ────────────────────────────────────────────────
+
+  /** @brief One progress or completion report of sync_resource_package(). */
+  struct resource_sync_status {
+    std::string name; ///< Package name.
+    wish_sync_state state; ///< WISH_SYNC_PROGRESS, or the final UPLOADED/CACHED/FAILED.
+    std::uint64_t transferred{0}; ///< Bytes uploaded so far.
+    std::uint64_t total{0}; ///< Size of the local zip.
+    std::string error; ///< Failure message when state is WISH_SYNC_FAILED.
+
+    /** @brief True for the last report (any state but WISH_SYNC_PROGRESS). */
+    bool finished() const {
+      return state != WISH_SYNC_PROGRESS;
+    }
+  };
+
+  /** @brief Callback of sync_resource_package(); runs on a background thread. */
+  using resource_sync_fn = std::function<void(const resource_sync_status&)>;
+
+  /**
+   * @brief Keeps a local zip of resources in sync with the session sandbox,
+   *        in the background (see wish_sync_resource_package()).
+   *
+   * The zip is uploaded and unpacked into @p dest_path (empty: the sandbox
+   * root) only if it changed since the server last unpacked package
+   * @p name. Returns at once; @p on_update gets progress reports and one
+   * final report (finished() is true).
+   *
+   * @throws error if the sync cannot start (e.g. @p local_zip_path is missing).
+   */
+  void sync_resource_package(
+      const std::string& name,
+      const std::string& local_zip_path,
+      const std::string& dest_path = "",
+      resource_sync_fn on_update = nullptr) {
+    auto* fn = on_update ? new resource_sync_fn(std::move(on_update)) : nullptr;
+    wish_error rc = wish_sync_resource_package(
+        h_, name.c_str(), local_zip_path.c_str(), dest_path.c_str(), fn ? &client::sync_trampoline : nullptr, fn);
+    if (rc != WISH_OK)
+      delete fn;
+    detail::throw_if_wish_error(rc, "client::sync_resource_package(" + name + ")", h_);
+  }
+
+  /** @brief Blocks until every sync_resource_package() on this client has finished. */
+  void wait_resource_syncs() {
+    detail::throw_if_wish_error(wish_wait_resource_syncs(h_), "client::wait_resource_syncs", h_);
+  }
+
   // ── User store ───────────────────────────────────────────────────────
   //
   // A persistent store of named objects private to this session's identity
@@ -468,6 +517,65 @@ class client {
     return std::monostate{};
   }
 
+  // ── Notifications ────────────────────────────────────────────────────
+
+  /// @brief Severity of a notification (matches WISH_NOTIFY_*).
+  enum class notify_kind : int32_t { info = 0, success = 1, warning = 2, error = 3 };
+
+  /**
+   * @brief Show a toast notification on the server's screen (see
+   *        wish_notify()).
+   * @param duration_ms  0 keeps it until dismissed.
+   * @param keys         Key combination drawn as key caps, e.g. "Ctrl+B".
+   * @param tag          Replaces this session's notification with that tag.
+   * @return Its id, for dismiss_notification().
+   * @throws wish_error when the server shows no notifications or the title
+   *         is empty.
+   */
+  uint64_t notify(
+      const std::string& title,
+      const std::string& body = {},
+      notify_kind kind = notify_kind::info,
+      int32_t duration_ms = 6000,
+      const std::string& keys = {},
+      const std::string& tag = {}) {
+    uint64_t id = 0;
+    detail::throw_if_wish_error(
+        wish_notify(
+            h_, title.c_str(), body.c_str(), static_cast<int32_t>(kind), keys.c_str(), duration_ms, tag.c_str(), &id),
+        "client::notify",
+        h_);
+    return id;
+  }
+
+  /// @brief Remove one of this session's notifications early.
+  void dismiss_notification(uint64_t id) {
+    detail::throw_if_wish_error(wish_notify_dismiss(h_, id), "client::dismiss_notification", h_);
+  }
+
+  // ── Media playback ───────────────────────────────────────────────────
+
+  /// @brief Whether the server plays media (see wish_media_available()).
+  bool has_media() const {
+    int avail = 0;
+    detail::throw_if_wish_error(wish_media_available(h_, &avail), "client::has_media", h_);
+    return avail != 0;
+  }
+
+  /**
+   * @brief Open @p path, a file already uploaded to the session sandbox, as
+   *        player @p name (see wish_media_open()).
+   * @throws wish_error when the server plays no media, the path is refused
+   *         or missing, or the file isn't playable.
+   */
+  media_player open_media(const std::string& name, const std::string& path, const media_options& options = {}) {
+    wish_media_handle h = nullptr;
+    const int32_t flags = (options.autoplay ? WISH_MEDIA_AUTOPLAY : 0) | (options.loop ? WISH_MEDIA_LOOP : 0);
+    detail::throw_if_wish_error(
+        wish_media_open(h_, name.c_str(), path.c_str(), flags, options.volume, &h), "client::open_media", h_);
+    return media_player{h, h_, name};
+  }
+
   // ── Logging ──────────────────────────────────────────────────────────
 
   void log(const std::string& level, const std::string& msg) {
@@ -494,6 +602,25 @@ class client {
   void destroy() {
     if (h_) wish_client_destroy(h_);
     h_ = nullptr;
+  }
+
+  static void sync_trampoline(
+      wish_client_handle,
+      const char* name,
+      wish_sync_state state,
+      uint64_t transferred,
+      uint64_t total,
+      const char* error,
+      void* userdata) {
+    auto* fn = static_cast<resource_sync_fn*>(userdata);
+    resource_sync_status status{name, state, transferred, total, error ? error : ""};
+    try {
+      (*fn)(status);
+    } catch (...) {
+      // Never let an exception cross the C ABI.
+    }
+    if (status.finished())
+      delete fn;
   }
 
   static void session_trampoline(wish_client_handle, void* userdata) {

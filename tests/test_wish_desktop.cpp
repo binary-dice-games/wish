@@ -14,13 +14,16 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <functional>
 #include <iterator>
 #include <sstream>
+#include <string>
 #include <thread>
+#include <vector>
 
 // wish_desktop_app.cpp DECLAREs these (DEFINEd in main.cpp / standalone_main.cpp
 // for the real binaries, neither of which this test links) and DEFINEs the
@@ -118,7 +121,7 @@ class WishDesktopTest : public ::testing::Test {
 
   void SetUp() override {
     ASSERT_TRUE(kAppsRegistered);
-    upstream_srv_.set_store_dir(store_dir_);
+    upstream_srv_.set_home(store_dir_);
     upstream_srv_.start(std::make_shared<wish::local_auth_module>());
     desktop_.set_launcher(&launcher_);
     desktop_.set_client_command({"wish", "client"});
@@ -863,7 +866,7 @@ class WishDesktopEndpointTest : public ::testing::Test {
     auto endpoint = wish::claim_desktop_endpoint(endpoint_name_);
     ASSERT_NE(endpoint, nullptr);
     downstream_.add(std::move(endpoint));
-    upstream_srv_.set_store_dir(store_dir_);
+    upstream_srv_.set_home(store_dir_);
     upstream_srv_.start(std::make_shared<wish::local_auth_module>());
     desktop_.set_launcher(&launcher_);
     desktop_.set_client_command({"wish", "client"});
@@ -898,6 +901,121 @@ TEST_F(WishDesktopEndpointTest, StoppingTheDesktopReleasesTheEndpoint) {
   desktop_.stop_tasks();
   desktop_.stop();
   EXPECT_NE(wish::claim_desktop_endpoint(endpoint_name_), nullptr);
+}
+
+// ── --with_server ────────────────────────────────────────────────────────────
+
+namespace {
+
+// The in-process server `wish_desktop_app` starts for --with_server: a real
+// wish::server on the transport the desktop hands it. should_quit() follows
+// @p quit, standing in for a closed window.
+class test_in_process_server : public wish::in_process_server {
+ public:
+  test_in_process_server(
+      server_transport_iface& transport,
+      const std::filesystem::path& store_dir,
+      std::atomic<int>& sessions,
+      const std::atomic<bool>& quit)
+      : srv_(transport, std::make_unique<wish::null_renderer>(), sessions), quit_(quit) {
+    srv_.set_home(store_dir);
+    srv_.start(std::make_shared<wish::local_auth_module>());
+  }
+
+  ~test_in_process_server() override {
+    srv_.stop();
+  }
+
+  bool should_quit() const override {
+    return quit_.load();
+  }
+
+ private:
+  class counting_server : public wish::server {
+   public:
+    counting_server(server_transport_iface& t, std::unique_ptr<wish::renderer> r, std::atomic<int>& sessions)
+        : wish::server(t, std::move(r)), sessions_(sessions) {}
+
+   protected:
+    void on_session_created(wish::context&) override {
+      sessions_++;
+    }
+
+   private:
+    std::atomic<int>& sessions_;
+  };
+
+  counting_server srv_;
+  const std::atomic<bool>& quit_;
+};
+
+} // namespace
+
+TEST(WishDesktopWithServerTest, RunsOnAnInProcessServerAndStopsWithIt) {
+  ASSERT_TRUE(kAppsRegistered);
+  const std::filesystem::path store_dir = test_store_dir();
+  // Downstream on the fixed endpoint (so run() claims nothing else), under a
+  // name no other test process uses.
+  const std::string endpoint = unique_endpoint_name();
+#if defined(_WIN32)
+  _putenv_s("WISH_DESKTOP_ENDPOINT", endpoint.c_str());
+#else
+  setenv("WISH_DESKTOP_ENDPOINT", endpoint.c_str(), 1);
+#endif
+
+  std::atomic<int> factory_calls{0};
+  std::atomic<int> sessions{0};
+  std::atomic<bool> quit{false};
+  wish::wish_desktop_app app;
+  app.set_client_command({"wish", "client"});
+  app.set_server_factory([&](server_transport_iface& transport) -> std::unique_ptr<wish::in_process_server> {
+    factory_calls++;
+    return std::make_unique<test_in_process_server>(transport, store_dir, sessions, quit);
+  });
+
+  std::vector<std::string> args = {
+      "wish-desktop",
+      "--with_server",
+      "--upstream_transport=not-a-transport", // ignored with --with_server
+      "--downstream_transport=pipe",
+      "--downstream_name=" + endpoint,
+      "--upstream_username=tester",
+      "--config=" + (store_dir / "desktop" / "desktop.yaml").string(),
+  };
+  std::atomic<int> rc{-1};
+  std::thread desktop_thread([&] {
+    std::vector<char*> argv;
+    for (auto& a : args)
+      argv.push_back(a.data());
+    argv.push_back(nullptr);
+    rc = app.run(static_cast<int>(args.size()), argv.data());
+  });
+
+  // An app reaches the in-process server through the desktop: Label is
+  // created upstream, by that server.
+  bool reached_server = false;
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{10};
+  while (!reached_server && rc.load() == -1 && std::chrono::steady_clock::now() < deadline) {
+    try {
+      client app_client(std::make_unique<named_pipe_client_transport>(endpoint));
+      app_client.connect();
+      reached_server = app_client.instantiate("wish"_key, "Label"_key).get().valid();
+      app_client.disconnect();
+    } catch (const std::exception&) {
+      std::this_thread::sleep_for(std::chrono::milliseconds{50});
+    }
+  }
+  EXPECT_TRUE(reached_server);
+  EXPECT_EQ(factory_calls.load(), 1);
+  EXPECT_EQ(sessions.load(), 1); // the desktop's one upstream session
+
+  // Closing the server's window ends the desktop.
+  quit = true;
+  desktop_thread.join();
+  EXPECT_EQ(rc.load(), 0);
+
+  std::error_code ec;
+  std::filesystem::remove_all(store_dir, ec);
 }
 
 // ── process_launcher ─────────────────────────────────────────────────────────

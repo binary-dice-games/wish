@@ -7,6 +7,8 @@
 
 #include <client/wish_app_host.hpp>
 #include <context/settings_schema.hpp>
+#include <context/style_service.hpp>
+#include <server/notifications.hpp>
 #include <i18n/translations.hpp>
 
 #include "src/rmi/client/client.hpp"
@@ -16,6 +18,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <future>
 #include <istream>
@@ -73,14 +76,27 @@ class client : public bison::rmi::client {
    * Disconnects even if `on_session()` throws; the exception is re-thrown
    * after `disconnect()` completes.
    *
-   * @param connect_params Forwarded unchanged to `bison::rmi::client::connect()`
+   * @param connect_params Forwarded to `bison::rmi::client::connect()`
    *                        -- reaches both the transport's `open()` and the
    *                        server's `OP_CONNECT` payload, e.g. fields a
    *                        server-side `auth_module_iface` inspects (see
-   *                        `src/auth/DESIGN.md`). Empty by default, matching
-   *                        prior behavior.
+   *                        `src/auth/DESIGN.md`) -- after
+   *                        `apply_default_identity()`: without a `username`
+   *                        or `anonymous: true`, the session connects as the
+   *                        logged-in OS user.
    */
   void run(bison::dynamic connect_params = bison::dynamic{});
+
+  /**
+   * @brief Adds the default session identity to @p params: `username` set
+   *        to `os_user_name()`, unless @p params already has a `username`
+   *        or `anonymous: true`, or the OS user is unknown. See
+   *        src/context/DESIGN.md.
+   *
+   * `run()` calls it; code that calls `connect()` directly calls it first
+   * to get the same default.
+   */
+  static void apply_default_identity(bison::dynamic& params);
 
   /**
    * @brief Register a callback fired once this session's connection has
@@ -292,6 +308,51 @@ class client : public bison::rmi::client {
       std::size_t chunk_size = kDefaultFileChunkSize);
 
   /**
+   * @brief Keep a local zip of resources in sync with the session sandbox.
+   *
+   * The server remembers, per package @p name, the version of the zip it
+   * last unpacked (the local file's modified time and size). If
+   * @p local_zip changed since, or was never synced, it is uploaded in
+   * chunks and unpacked into @p dest_path; otherwise nothing is sent.
+   * Unpacking only adds and overwrites files; it never deletes any.
+   *
+   * Call it whenever the resources are needed, e.g. a game syncing a
+   * level's package just before the level starts. The memory lives in the
+   * sandbox, so it lasts for the session (or across sessions, with a
+   * persistent sandbox).
+   *
+   * The sync runs on a background thread. @p on_progress and @p on_done run
+   * on that thread too; they must not block on the RMI dispatch thread. Do
+   * not run two syncs of the same @p name at once.
+   *
+   * @param name        Unique package name, e.g. `"acme.game.level1"`:
+   *                    1-128 characters from `[A-Za-z0-9_.-]`, not starting
+   *                    with `.`. Prefix it with the app's name to avoid
+   *                    collisions with other apps.
+   * @param local_zip   Local zip archive. Read in the background; must stay
+   *                    in place until the sync completes.
+   * @param dest_path   Destination directory, relative to the sandbox.
+   *                    Empty (the default) unpacks into the sandbox root.
+   * @param on_progress Called after each uploaded chunk with bytes sent and
+   *                    the zip size; called once with `(size, size)` when
+   *                    the package was already current.
+   * @param on_done     Called exactly once when the sync finished, with
+   *                    whether the zip was uploaded or the error message.
+   * @return Future resolved with `true` if the zip was uploaded, `false` if
+   *         it was already current. Holds the exception on failure.
+   *         Dropping the future blocks until the sync completes.
+   * @throws std::runtime_error (via the resolved future) if @p local_zip
+   *         cannot be read, @p name is malformed, @p dest_path escapes the
+   *         sandbox, or the archive is corrupt.
+   */
+  [[nodiscard]] std::future<bool> sync_resource_package(
+      const std::string& name,
+      const std::filesystem::path& local_zip,
+      const std::string& dest_path = "",
+      transfer_progress_callback on_progress = nullptr,
+      resource_sync_callback on_done = nullptr);
+
+  /**
    * @brief List file names found directly under a subdirectory of the
    *        server's sandboxed session resource directory.
    * @param path  Subdirectory relative to the resource directory (e.g.
@@ -325,8 +386,17 @@ class client : public bison::rmi::client {
   std::future<std::string> create_temp_dir(const std::string& qualified_app);
 
   /**
-   * @brief Apply a named built-in style preset for this session.
-   * @param name  `"dark"`, `"light"`, or `"classic"`.
+   * @brief The themes the server can apply with set_style_preset(), in the
+   *        order theme pickers show them (built in: wish, light, dark,
+   *        classic, plus any the server registered). Empty for an older
+   *        server without the call.
+   */
+  std::future<std::vector<theme_info>> list_themes();
+
+  /**
+   * @brief Apply a named style preset (theme) for this session.
+   * @param name  A theme from list_themes(), e.g. `"wish"`, `"dark"`,
+   *              `"light"` or `"classic"`.
    *
    * Clears any per-field overrides set by `set_style`; the preset becomes the
    * new baseline.  Call `set_style` after this to add individual overrides.
@@ -374,6 +444,59 @@ class client : public bison::rmi::client {
 
   /// @brief Convenience wrapper for `log("error", msg)`.
   std::future<void> log_error(const std::string& msg);
+
+  // ── Notifications ─────────────────────────────────────────────────────────
+  //
+  // Toasts shown in a corner of the server's screen (see
+  // docs/server-overlay.md). The server marks each with this session's
+  // identity, keeps at most a few of them per session, and removes them
+  // when the session ends.
+
+  /// @brief True when the server accepts notifications from this session.
+  bool has_notifications() const noexcept {
+    return notifications_proxy_.has_value();
+  }
+
+  /**
+   * @brief Show @p n on the server's screen. Only `title`, `body`, `keys`,
+   *        `kind`, `duration` (0: until dismissed; at most 5 minutes) and
+   *        `tag` (replaces this session's notification with the same tag)
+   *        are sent; `source` is set by the server.
+   * @return Future resolving to the notification's id (for
+   *         dismiss_notification()). Throws through the future when
+   *         has_notifications() is false or the title is empty.
+   */
+  std::future<uint64_t> notify(const notification& n);
+
+  /// @brief Remove notification @p id early (only this session's own).
+  /// @return Future resolving to whether it was still on screen.
+  std::future<bool> dismiss_notification(uint64_t id);
+
+  // ── Media playback ────────────────────────────────────────────────────────
+  //
+  // Audio and video played by the server (see docs/media.md): the server
+  // decodes the file and drives its own sound card, and shows video frames
+  // in `Video` widgets; the client only sends commands and needs no media
+  // library.
+
+  /// @brief True when the server plays media (built with FFmpeg).
+  bool has_media() const noexcept {
+    return media_proxy_ != nullptr;
+  }
+
+  /**
+   * @brief Open @p path, a file already in the session sandbox (uploaded
+   *        with upload_file()/sync_resource_package()), as player @p name.
+   *
+   * Absolute paths, `..` escapes and URLs are refused. Opening a name that
+   * is already open replaces that player. A session has at most 8.
+   *
+   * @return Future resolving to the player. Throws through the future when
+   *         has_media() is false, the path is refused or missing, or the file
+   *         is not playable.
+   */
+  std::future<media_player> open_media(
+      const std::string& name, const std::string& path, const media_options& options = {});
 
   // ── User store ────────────────────────────────────────────────────────────
   //
@@ -566,7 +689,10 @@ class client : public bison::rmi::client {
   // Per-session proxy handles.  Populated by on_connect() before on_session()
   // is called; cleared by on_disconnect().
   std::optional<bison::rmi::proxy::dynamic> template_proxy_;
-  std::optional<bison::rmi::proxy::dynamic> fs_proxy_;
+  // shared_ptr, not optional: a background sync_resource_package() keeps
+  // its own reference, so a disconnect mid-sync cannot destroy the proxy
+  // under it (its remaining calls fail instead).
+  std::shared_ptr<bison::rmi::proxy::dynamic> fs_proxy_;
   std::optional<bison::rmi::proxy::dynamic> style_proxy_;
   std::optional<bison::rmi::proxy::dynamic> log_proxy_;
   // Resolved non-fatally in on_connect() -- unset (rather than on_connect()
@@ -576,6 +702,12 @@ class client : public bison::rmi::client {
   // Resolved non-fatally in on_connect() -- unset for an anonymous session,
   // which has no user store. See has_user_store().
   std::optional<bison::rmi::proxy::dynamic> user_store_proxy_;
+  // Unset when the server has no __WishNotifications service. See
+  // has_notifications().
+  std::optional<bison::rmi::proxy::dynamic> notifications_proxy_;
+  // Null when the server plays no media; shared with every media_player so
+  // close() still works from a copy.
+  std::shared_ptr<bison::rmi::proxy::dynamic> media_proxy_;
   // Serializes describe_*()'s read-merge-write of schema entries.
   bison::synchronized<bool> describe_lock_{false};
 

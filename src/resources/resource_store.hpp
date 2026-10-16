@@ -19,6 +19,11 @@ namespace bdg::wish::resource_store {
 /// read, no write), so `file_service::upload()` cannot silently overwrite a
 /// built-in asset.
 ///
+/// Safe to call again on a directory it already populated (a persistent
+/// sandbox, see src/context/DESIGN.md): a file that already matches its
+/// entry (size and CRC-32) is left alone, any other is replaced by renaming
+/// a fresh copy over it.
+///
 /// Never throws. Any miniz or filesystem failure is logged to stderr and
 /// that entry is skipped; extraction continues with the remaining entries.
 /// Callers must treat a `false` return as non-fatal — see the rationale in

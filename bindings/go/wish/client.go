@@ -18,6 +18,8 @@ package wish
 // (see shim.c/shim.h for wish_client_run_shim/wish_client_run_with_params_shim
 // themselves).
 extern void goSessionTrampoline(wish_client_handle client, void* userdata);
+extern void goResourceSyncTrampoline(wish_client_handle client, char* name, int state,
+    uint64_t transferred, uint64_t total, char* errMsg, void* userdata);
 */
 import "C"
 
@@ -558,6 +560,81 @@ func (c *Client) UploadPackage(destPath, localZipPath string) error {
 	return checkWish(rc, fmt.Sprintf("client.upload_package(%q)", destPath), c.handle)
 }
 
+// ── Resource packages ────────────────────────────────────────────────────
+
+// ResourceSyncState is the kind of a ResourceSyncStatus report
+// (wish_sync_state).
+type ResourceSyncState int32
+
+const (
+	// ResourceSyncProgress: a chunk was uploaded; more reports follow.
+	ResourceSyncProgress ResourceSyncState = 0
+	// ResourceSyncUploaded: final; the zip was uploaded and unpacked.
+	ResourceSyncUploaded ResourceSyncState = 1
+	// ResourceSyncCached: final; the server already had this version.
+	ResourceSyncCached ResourceSyncState = 2
+	// ResourceSyncFailed: final; the sync failed, see Err.
+	ResourceSyncFailed ResourceSyncState = 3
+)
+
+// ResourceSyncStatus is one progress or completion report of
+// Client.SyncResourcePackage.
+type ResourceSyncStatus struct {
+	Name        string            // Package name.
+	State       ResourceSyncState // Kind of report.
+	Transferred uint64            // Bytes uploaded so far.
+	Total       uint64            // Size of the local zip.
+	Err         string            // Failure message when State is ResourceSyncFailed.
+}
+
+// Finished reports whether this is the last report (any state but
+// ResourceSyncProgress).
+func (s ResourceSyncStatus) Finished() bool {
+	return s.State != ResourceSyncProgress
+}
+
+// SyncResourcePackage keeps a local zip of resources in sync with the
+// session sandbox, in the background.
+//
+// The server remembers which version (modified time and size) of package
+// name it last unpacked; the zip is uploaded and unpacked into destPath
+// ("": the sandbox root) only if it changed. Unpacking adds and overwrites
+// files, never deletes any. name must be unique, e.g. "acme.game.level1"
+// (1-128 characters from [A-Za-z0-9_.-]).
+//
+// Returns at once. onUpdate (may be nil) runs on a background thread for
+// each progress report and once more for the final one (Finished()).
+// Returns an error if the sync cannot start (e.g. a missing zip).
+func (c *Client) SyncResourcePackage(name, localZipPath, destPath string, onUpdate func(ResourceSyncStatus)) error {
+	cName := C.CString(name)
+	defer C.free(unsafe.Pointer(cName))
+	cZip := C.CString(localZipPath)
+	defer C.free(unsafe.Pointer(cZip))
+	cDest := C.CString(destPath)
+	defer C.free(unsafe.Pointer(cDest))
+
+	h := cgo.NewHandle(onUpdate)
+	rc := C.wish_sync_resource_package_shim(
+		c.handle,
+		cName,
+		cZip,
+		cDest,
+		(C.wish_resource_sync_fn)(unsafe.Pointer(C.goResourceSyncTrampoline)),
+		C.uintptr_t(h),
+	)
+	if rc != C.WISH_OK {
+		// The callback never runs when the sync did not start.
+		h.Delete()
+	}
+	return checkWish(rc, fmt.Sprintf("client.sync_resource_package(%q)", name), c.handle)
+}
+
+// WaitResourceSyncs blocks until every SyncResourcePackage on this client
+// has finished. Must not be called from a sync callback.
+func (c *Client) WaitResourceSyncs() error {
+	return checkWish(C.wish_wait_resource_syncs(c.handle), "client.wait_resource_syncs", c.handle)
+}
+
 // ── User store ───────────────────────────────────────────────────────────
 //
 // A persistent store of named objects private to this session's identity
@@ -726,6 +803,58 @@ func (c *Client) DescribeSettingsCategory(category SettingsCategory) error {
 	defer C.free(unsafe.Pointer(cJSON))
 	rc := C.wish_settings_describe_category(c.handle, cJSON)
 	return checkWish(rc, "client.describe_settings_category("+category.ID+")", c.handle)
+}
+
+// ── Notifications ────────────────────────────────────────────────────────
+
+// NotifyKind is a notification's severity: its accent color and icon
+// (WISH_NOTIFY_*).
+type NotifyKind int32
+
+const (
+	NotifyInfo    NotifyKind = 0
+	NotifySuccess NotifyKind = 1
+	NotifyWarning NotifyKind = 2
+	NotifyError   NotifyKind = 3
+)
+
+// Notification is a toast for Client.Notify. Title is required; a zero
+// Duration keeps it until dismissed (at most 5 minutes).
+type Notification struct {
+	Title    string
+	Body     string
+	Kind     NotifyKind
+	Keys     string // key combination drawn as key caps, e.g. "Ctrl+B"
+	Duration time.Duration
+	Tag      string // replaces this session's notification with the same tag
+}
+
+// Notify shows a toast notification on the server's screen and returns its
+// id. The server shows this session's identity on it and keeps at most 4
+// per session. Fails when the server shows no notifications or the title is
+// empty.
+func (c *Client) Notify(n Notification) (uint64, error) {
+	cTitle := C.CString(n.Title)
+	defer C.free(unsafe.Pointer(cTitle))
+	cBody := C.CString(n.Body)
+	defer C.free(unsafe.Pointer(cBody))
+	cKeys := C.CString(n.Keys)
+	defer C.free(unsafe.Pointer(cKeys))
+	cTag := C.CString(n.Tag)
+	defer C.free(unsafe.Pointer(cTag))
+	var id C.uint64_t
+	rc := C.wish_notify(c.handle, cTitle, cBody, C.int32_t(n.Kind), cKeys,
+		C.int32_t(n.Duration.Milliseconds()), cTag, &id)
+	if err := checkWish(rc, "client.notify", c.handle); err != nil {
+		return 0, err
+	}
+	return uint64(id), nil
+}
+
+// DismissNotification removes one of this session's notifications early.
+func (c *Client) DismissNotification(id uint64) error {
+	rc := C.wish_notify_dismiss(c.handle, C.uint64_t(id))
+	return checkWish(rc, "client.dismiss_notification", c.handle)
 }
 
 // ── Logging ──────────────────────────────────────────────────────────────

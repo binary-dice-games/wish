@@ -7,9 +7,11 @@ are plain ``bison.rmi.Proxy`` / ``bison.rmi.Future`` instances (``get`` /
 library re-exports the bison and RMI C ABIs alongside its own.
 """
 
+import concurrent.futures
 import ctypes
 import json
 import os
+import threading
 import time
 from typing import Any, Callable, List, Optional, Tuple
 
@@ -80,12 +82,16 @@ class Client:
     concurrent :meth:`quit` unblocks a :meth:`wait` inside it).
     """
 
-    __slots__ = ("_lib", "_handle", "_session_cb")
+    __slots__ = ("_lib", "_handle", "_session_cb", "_sync_cbs", "_sync_lock")
 
     def __init__(self, handle: int):
         self._lib = _n.get_lib()
         self._handle = _n.ClientHandle(handle)
         self._session_cb: Optional[ctypes._FuncPointer] = None
+        # ctypes callbacks of running resource syncs, kept alive until their
+        # final call.
+        self._sync_cbs: dict = {}
+        self._sync_lock = threading.Lock()
 
     @classmethod
     def tcp(cls, host: str, port: int) -> "Client":
@@ -490,6 +496,78 @@ class Client:
             self.last_error,
         )
 
+    # ── Resource packages ────────────────────────────────────────────────────
+
+    def sync_resource_package(
+        self,
+        name: str,
+        local_zip_path: str,
+        dest_path: str = "",
+        on_progress: Optional[Callable[[int, int], None]] = None,
+        on_done: Optional[Callable[[bool, Optional[str]], None]] = None,
+    ) -> "concurrent.futures.Future[bool]":
+        """Keep a local zip of resources in sync with the session sandbox,
+        in the background.
+
+        The server remembers which version (modified time and size) of
+        package ``name`` it last unpacked; the zip is uploaded and unpacked
+        into ``dest_path`` (``""``: the sandbox root) only if it changed.
+        Unpacking adds and overwrites files, never deletes any. ``name``
+        must be unique, e.g. ``"acme.game.level1"`` (1-128 characters from
+        ``[A-Za-z0-9_.-]``).
+
+        Returns at once. ``on_progress(transferred, total)`` and then
+        ``on_done(uploaded, error)`` (``error`` is ``None`` on success) run
+        on a background thread. The returned future resolves to ``True``
+        if the zip was uploaded, ``False`` if it was already current, or
+        holds a :class:`WishError`.
+
+        Raises :class:`WishError` if the sync cannot start (e.g. a missing
+        ``local_zip_path``).
+        """
+        future: "concurrent.futures.Future[bool]" = concurrent.futures.Future()
+        holder: list = []
+
+        def c_callback(_client_h, _name, state, transferred, total, error, _userdata) -> None:
+            try:
+                if state == _n.WISH_SYNC_PROGRESS:
+                    if on_progress:
+                        on_progress(transferred, total)
+                    return
+                message = error.decode() if error else None
+                if on_done:
+                    on_done(state == _n.WISH_SYNC_UPLOADED, message)
+            except Exception:  # C ABI boundary: cannot propagate
+                pass
+            if state == _n.WISH_SYNC_PROGRESS:
+                return
+            if state == _n.WISH_SYNC_FAILED:
+                future.set_exception(
+                    WishError(_n.WISH_ERR_EXCEPTION, f"sync_resource_package({name!r})", message or "")
+                )
+            else:
+                future.set_result(state == _n.WISH_SYNC_UPLOADED)
+            with self._sync_lock:
+                self._sync_cbs.pop(id(holder[0]), None)
+
+        cb = _n.ResourceSyncFn(c_callback)
+        holder.append(cb)
+        with self._sync_lock:
+            self._sync_cbs[id(cb)] = cb
+        rc = self._lib.wish_sync_resource_package(
+            self._handle, name.encode(), local_zip_path.encode(), dest_path.encode(), cb, None
+        )
+        if rc != _n.WISH_OK:
+            with self._sync_lock:
+                self._sync_cbs.pop(id(cb), None)
+        _check(rc, f"sync_resource_package({name!r}, {local_zip_path!r})", self.last_error)
+        return future
+
+    def wait_resource_syncs(self) -> None:
+        """Block until every :meth:`sync_resource_package` on this client
+        has finished. Must not be called from a sync callback."""
+        _check(self._lib.wish_wait_resource_syncs(self._handle), "wait_resource_syncs", self.last_error)
+
     # ── User store ───────────────────────────────────────────────────────────
     #
     # A persistent store of named objects private to this session's identity
@@ -672,6 +750,83 @@ class Client:
             f"describe_settings_category({id!r})",
             self.last_error,
         )
+
+    # ── Notifications ────────────────────────────────────────────────────────
+
+    NOTIFY_KINDS = {"info": 0, "success": 1, "warning": 2, "error": 3}
+
+    def notify(
+        self,
+        title: str,
+        body: str = "",
+        *,
+        kind: str = "info",
+        keys: str = "",
+        duration: float = 6.0,
+        tag: str = "",
+    ) -> int:
+        """Show a toast notification on the server's screen and return its id.
+
+        ``kind`` is ``"info"``, ``"success"``, ``"warning"`` or ``"error"``;
+        ``keys`` a key combination drawn as key caps (``"Ctrl+B"``);
+        ``duration`` in seconds, 0 to keep it until dismissed (at most 300);
+        ``tag`` replaces this session's notification with the same tag. The
+        server shows this session's identity on it and keeps at most 4 per
+        session. Raises ``WishError`` when the server shows no notifications."""
+        if kind not in self.NOTIFY_KINDS:
+            raise ValueError(f"notify: kind must be one of {sorted(self.NOTIFY_KINDS)}")
+        out = ctypes.c_uint64(0)
+        _check(
+            self._lib.wish_notify(
+                self._handle,
+                title.encode(),
+                body.encode(),
+                self.NOTIFY_KINDS[kind],
+                keys.encode(),
+                int(duration * 1000),
+                tag.encode(),
+                ctypes.byref(out),
+            ),
+            "notify",
+            self.last_error,
+        )
+        return out.value
+
+    def dismiss_notification(self, id: int) -> None:
+        """Remove one of this session's notifications early."""
+        _check(self._lib.wish_notify_dismiss(self._handle, id), "dismiss_notification", self.last_error)
+
+    # ── Media playback ───────────────────────────────────────────────────────
+
+    def has_media(self) -> bool:
+        """Whether the server plays media (it was built with FFmpeg)."""
+        out = ctypes.c_int(0)
+        _check(self._lib.wish_media_available(self._handle, ctypes.byref(out)), "has_media", self.last_error)
+        return bool(out.value)
+
+    def open_media(
+        self, name: str, path: str, *, autoplay: bool = False, loop: bool = False, volume: float = 1.0
+    ) -> "MediaPlayer":
+        """Open ``path``, a file already uploaded to the session sandbox, as
+        player ``name`` and return a :class:`wish.media.MediaPlayer`.
+
+        The server plays it: show its video with a ``Video`` widget whose
+        ``player`` is ``name``. Absolute paths, ``..`` escapes and URLs are
+        refused; opening an open name replaces that player; a session has at
+        most 8. Raises ``WishError`` when the server plays no media, the path
+        is refused or missing, or the file isn't playable."""
+        from .media import MediaPlayer
+
+        flags = (_n.WISH_MEDIA_AUTOPLAY if autoplay else 0) | (_n.WISH_MEDIA_LOOP if loop else 0)
+        out = _n.MediaHandle()
+        _check(
+            self._lib.wish_media_open(
+                self._handle, name.encode("utf-8"), path.encode("utf-8"), flags, float(volume), ctypes.byref(out)
+            ),
+            f"open_media({name!r})",
+            self.last_error,
+        )
+        return MediaPlayer(self._lib, out.value, name, self.last_error)
 
     # ── Logging ──────────────────────────────────────────────────────────────
 

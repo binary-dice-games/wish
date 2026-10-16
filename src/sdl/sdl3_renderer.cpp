@@ -14,13 +14,13 @@
 #include <implot.h>
 #include <implot3d.h>
 
-#ifdef WISH_AUTOMATION_ENABLED
-// stb_image_write is vendored solely for capture_frame_png() -- mirrors
-// web_renderer.cpp's own STB_IMAGE_IMPLEMENTATION/<stb_image.h> pattern for
-// the read side (see that file's comment on civetweb/stb_image isolation).
+// stb_image_write is vendored solely for capture_frame_png() (screenshots:
+// request_screenshot() and automation) -- mirrors web_renderer.cpp's own
+// STB_IMAGE_IMPLEMENTATION/<stb_image.h> pattern for the read side. STATIC:
+// modules embed their own copy too.
+#define STB_IMAGE_WRITE_STATIC
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
-#endif
 
 #include <stdexcept>
 #include <utility>
@@ -42,6 +42,10 @@ sdl3_renderer::~sdl3_renderer() {
 // ── lifecycle ─────────────────────────────────────────────────────────────────
 
 void sdl3_renderer::setup() {
+  // Closing the window arrives as SDL_EVENT_WINDOW_CLOSE_REQUESTED only, so
+  // poll_events() can ask for confirmation first (set_confirm_close());
+  // SDL_EVENT_QUIT is then left to signals (Ctrl+C) and OS-level quits.
+  SDL_SetHint(SDL_HINT_QUIT_ON_LAST_WINDOW_CLOSE, "0");
   if (!SDL_Init(SDL_INIT_VIDEO))
     throw std::runtime_error(std::string("SDL_Init failed: ") + SDL_GetError());
 
@@ -164,6 +168,13 @@ bool sdl3_renderer::poll_events() {
     ImGui_ImplSDL3_ProcessEvent(&event);
     if (event.type == SDL_EVENT_QUIT)
       quit_.store(true, std::memory_order_release);
+    if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED && window_ &&
+        event.window.windowID == SDL_GetWindowID(window_)) {
+      if (confirm_close_.load(std::memory_order_acquire))
+        close_requested_.store(true, std::memory_order_release);
+      else
+        quit_.store(true, std::memory_order_release);
+    }
 
     if (event.type == SDL_EVENT_MOUSE_MOTION) {
       if (mouse_motion_significant(event.motion.x, event.motion.y))
@@ -215,12 +226,11 @@ void sdl3_renderer::end_frame() {
   SDL_RenderClear(sdl_renderer_);
   ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), sdl_renderer_);
 
-#ifdef WISH_AUTOMATION_ENABLED
   // Service any pending screenshot requests here -- after draw data has been
   // submitted to sdl_renderer_ but before SDL_RenderPresent(), the last
   // point at which SDL_RenderReadPixels() still sees this frame's pixels.
   {
-    std::deque<std::promise<std::vector<uint8_t>>> pending;
+    std::deque<screenshot_callback> pending;
     {
       auto lock = pending_screenshots_.wlock();
       pending = std::move(*lock);
@@ -228,13 +238,43 @@ void sdl3_renderer::end_frame() {
     }
     if (!pending.empty()) {
       auto png = capture_frame_png();
-      for (auto& p : pending)
-        p.set_value(png);
+      for (auto& done : pending)
+        done(png);
     }
   }
-#endif
 
   SDL_RenderPresent(sdl_renderer_);
+}
+
+bool sdl3_renderer::request_screenshot(screenshot_callback done) {
+  if (!done || !sdl_renderer_)
+    return false;
+  pending_screenshots_.wlock()->push_back(std::move(done));
+  return true;
+}
+
+std::vector<uint8_t> sdl3_renderer::capture_frame_png() {
+  SDL_Surface* surf = SDL_RenderReadPixels(sdl_renderer_, nullptr);
+  if (!surf)
+    return {};
+
+  // Normalize to a predictable, tightly-packed RGBA8888 layout regardless of
+  // whatever pixel format SDL_RenderReadPixels happened to return, so
+  // stbi_write_png_to_func can be called with a fixed comp/stride.
+  SDL_Surface* converted = SDL_ConvertSurface(surf, SDL_PIXELFORMAT_RGBA32);
+  SDL_DestroySurface(surf);
+  if (!converted)
+    return {};
+
+  std::vector<uint8_t> png_bytes;
+  auto write_cb = [](void* ctx, void* data, int size) {
+    auto* out = static_cast<std::vector<uint8_t>*>(ctx);
+    const auto* bytes = static_cast<uint8_t*>(data);
+    out->insert(out->end(), bytes, bytes + size);
+  };
+  stbi_write_png_to_func(write_cb, &png_bytes, converted->w, converted->h, 4, converted->pixels, converted->pitch);
+  SDL_DestroySurface(converted);
+  return png_bytes;
 }
 
 bool sdl3_renderer::should_quit() const {
@@ -243,6 +283,14 @@ bool sdl3_renderer::should_quit() const {
 
 void sdl3_renderer::request_quit() {
   quit_.store(true, std::memory_order_release);
+}
+
+void sdl3_renderer::set_confirm_close(bool confirm) {
+  confirm_close_.store(confirm, std::memory_order_release);
+}
+
+bool sdl3_renderer::consume_close_request() {
+  return close_requested_.exchange(false, std::memory_order_acq_rel);
 }
 
 // ── font loading ──────────────────────────────────────────────────────────────
@@ -460,34 +508,10 @@ std::future<std::string> sdl3_renderer::query_tree(uint32_t request_id, const st
 }
 
 std::future<std::vector<uint8_t>> sdl3_renderer::capture_screenshot() {
-  std::promise<std::vector<uint8_t>> promise;
-  auto fut = promise.get_future();
-  pending_screenshots_.wlock()->push_back(std::move(promise));
+  auto promise = std::make_shared<std::promise<std::vector<uint8_t>>>();
+  auto fut = promise->get_future();
+  request_screenshot([promise](std::vector<uint8_t> png) { promise->set_value(std::move(png)); });
   return fut;
-}
-
-std::vector<uint8_t> sdl3_renderer::capture_frame_png() {
-  SDL_Surface* surf = SDL_RenderReadPixels(sdl_renderer_, nullptr);
-  if (!surf)
-    return {};
-
-  // Normalize to a predictable, tightly-packed RGBA8888 layout regardless of
-  // whatever pixel format SDL_RenderReadPixels happened to return, so
-  // stbi_write_png_to_func can be called with a fixed comp/stride.
-  SDL_Surface* converted = SDL_ConvertSurface(surf, SDL_PIXELFORMAT_RGBA32);
-  SDL_DestroySurface(surf);
-  if (!converted)
-    return {};
-
-  std::vector<uint8_t> png_bytes;
-  auto write_cb = [](void* ctx, void* data, int size) {
-    auto* out = static_cast<std::vector<uint8_t>*>(ctx);
-    const auto* bytes = static_cast<uint8_t*>(data);
-    out->insert(out->end(), bytes, bytes + size);
-  };
-  stbi_write_png_to_func(write_cb, &png_bytes, converted->w, converted->h, 4, converted->pixels, converted->pitch);
-  SDL_DestroySurface(converted);
-  return png_bytes;
 }
 
 void sdl3_renderer::inject_mouse_move(float x, float y) {

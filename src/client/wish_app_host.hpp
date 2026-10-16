@@ -7,12 +7,16 @@
 #pragma once
 
 #include <client/app_registry.hpp>
+#include <client/media_player.hpp>
+#include <client/resource_sync.hpp>
 #include <context/settings_schema.hpp>
+#include <server/notifications.hpp>
 
 #include "src/bison/bison.hpp"
 #include "src/rmi/client/proxy.hpp"
 
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <future>
 #include <optional>
@@ -89,6 +93,23 @@ class wish_app_host {
     return p.get_future();
   }
 
+  // ── Resource packages ───────────────────────────────────────────────────
+
+  /// @copydoc bdg::wish::client::sync_resource_package
+  ///
+  /// Not pure: a host without a file service (e.g. a test double) inherits
+  /// this default, whose future throws `std::logic_error` (and which never
+  /// calls @p on_done).
+  [[nodiscard]] virtual std::future<bool> sync_resource_package(
+      const std::string& name,
+      const std::filesystem::path& local_zip,
+      const std::string& dest_path = "",
+      transfer_progress_callback on_progress = nullptr,
+      resource_sync_callback on_done = nullptr) {
+    (void)name, (void)local_zip, (void)dest_path, (void)on_progress, (void)on_done;
+    return unavailable<bool>("resource packages");
+  }
+
   /// @brief Registration info of the app this host is running, or `nullptr`
   ///        if it was not started from the app registry.
   const app_info* running_app() const {
@@ -107,6 +128,47 @@ class wish_app_host {
     if (!running_app_)
       throw std::logic_error("wish: create_app_temp_dir() needs a running app");
     return create_temp_dir(qualified_app_name(*running_app_));
+  }
+
+  // ── Notifications ───────────────────────────────────────────────────────
+  //
+  // Toasts on the server's screen. Not pure: a host without them (e.g. a
+  // test double) inherits these defaults, which report them as unavailable.
+
+  /// @copydoc bdg::wish::client::has_notifications
+  virtual bool has_notifications() const {
+    return false;
+  }
+
+  /// @copydoc bdg::wish::client::notify
+  virtual std::future<uint64_t> notify(const notification& n) {
+    (void)n;
+    return unavailable<uint64_t>("notifications");
+  }
+
+  /// @copydoc bdg::wish::client::dismiss_notification
+  virtual std::future<bool> dismiss_notification(uint64_t id) {
+    (void)id;
+    return unavailable<bool>("notifications");
+  }
+
+  // ── Media playback ──────────────────────────────────────────────────────
+  //
+  // Audio/video played by the server from the session sandbox. Not pure: a
+  // host without it inherits these defaults, which report it unavailable.
+
+  /// @copydoc bdg::wish::client::has_media
+  virtual bool has_media() const {
+    return false;
+  }
+
+  /// @copydoc bdg::wish::client::open_media
+  virtual std::future<media_player> open_media(
+      const std::string& name, const std::string& path, const media_options& options = {}) {
+    (void)name;
+    (void)path;
+    (void)options;
+    return unavailable<media_player>("media playback");
   }
 
   // ── User store ──────────────────────────────────────────────────────────
@@ -284,10 +346,16 @@ class wish_app_host {
   const app_info* running_app_ = nullptr;
 
   template <typename T>
-  static std::future<T> unavailable_user_store() {
+  static std::future<T> unavailable(const char* what) {
     std::promise<T> p;
-    p.set_exception(std::make_exception_ptr(std::logic_error("wish: user store not supported by this app host")));
+    p.set_exception(
+        std::make_exception_ptr(std::logic_error(std::string{"wish: "} + what + " not supported by this app host")));
     return p.get_future();
+  }
+
+  template <typename T>
+  static std::future<T> unavailable_user_store() {
+    return unavailable<T>("user store");
   }
 };
 

@@ -68,10 +68,10 @@ flags given on the command line or in the environment, lets
 `--save_defaults` save only command-line flags, and keeps standalone's
 transport-flag rejection working.
 
-The saved defaults live in the server store (`<store_dir>/server_store.bison`,
+The saved defaults live in the server store (`<wish_home>/server/store.bison`,
 entries `wish.cli.server` / `wish.cli.standalone`) rather than a config file,
 so server-side code can read them like any other server-store entry. The
-store is read after the command line is parsed, since `--store_dir` locates
+store is read after the command line is parsed, since `--wish_home` locates
 it, and before `server_app::run()` builds the transport. `load_cli_config()`
 closes its store instance before the server opens its own. `server_app::run()`
 parses argv again, so `wish_server_app::run()` parses a copy first (gflags
@@ -94,6 +94,52 @@ silently.
 
 Behaviour is identical to the original implementation. The SDL3 renderer,
 dockspace, menu bar, and session restart logic are unchanged.
+
+### Server overlay and notifications
+
+`configured_server` turns on the server overlay (`server_overlay`,
+`src/imgui/imgui_server_overlay.hpp`; see
+[docs/server-overlay.md](../docs/server-overlay.md)) through
+`server_overlay_host`, the non-template face of `host_renderer`, since
+`make_renderer()` picks the backend at runtime. It fills
+`server_overlay_info` from the flags and the started `wish::server` (its
+`stores()`, sandbox root and admins), so the overlay edits the very store
+instances the sessions use, never a second copy of the same file.
+
+`host_renderer` checks the hotkey in `render_server_frame()`, before the
+sessions take the keyboard, and draws the overlay and the toasts in
+`renderer::render_server_overlay()`, which the render loop calls after the
+last session: drawn last, they cover the clients' windows. The overlay only
+raises itself when a client window is in front of it; raising it every
+frame would also put it above its own pop-ups (combo lists, the shutdown
+confirmation).
+
+The notification model (`notification_center`) lives in `src/server`, not
+in the ImGui code: every `renderer` owns one and every session gets it as
+`context::notifications`, so forms and server code post toasts without
+knowing the backend. `host_renderer::consume_render_request()` reports a
+new notification, so it shows even when nothing else asks for a frame.
+`wish standalone` shares `host_renderer`, so it draws notifications, but
+nothing enables its overlay.
+
+Clients post notifications through a per-session `__WishNotifications`
+service (`notification_service`), not straight into the center: it is the
+choke point for the guards (the session's identity as the visible source,
+a per-session cap, size and duration limits, session-scoped tags and
+dismissal, cleanup when the session ends). The identity is only known after
+authentication, so `server::on_authenticated()` sets it on the service that
+`on_session_created()` made.
+
+The Performance page reads `perf_recorder`, which `host_renderer` feeds:
+`begin_frame()`/`end_frame()` time each drawn frame, and `tick()` -- called
+at ~60 Hz whether or not a frame is drawn -- closes one sample a second
+with the process' CPU time and memory, so an idle server still shows a
+flat line instead of a frozen graph. Screenshots go through
+`renderer::request_screenshot()`, a renderer-level hook because only the
+renderer has the pixels: the SDL3 renderer reads the frame back before
+presenting it, and the web renderer asks the browser for its canvas (see
+`src/web/DESIGN.md`). The overlay hides itself and the toasts for the frames
+in between, then saves the PNG and comes back.
 
 ---
 
@@ -216,7 +262,7 @@ by the server: `src/ui/ui_elements/desktop_shell.cpp` (classes) and
 `wish desktop` multiplexes downstream clients into one upstream wish server
 session and turns that server's host window into a Windows/macOS-like
 desktop: wallpaper, desktop icons, and a bottom taskbar with a Start menu,
-pinned apps, open windows and a tray (connected apps, theme toggle, clock
+pinned apps, open windows and a tray (connected apps, theme menu, clock
 with a calendar, show-desktop strip). See [docs/cli.md](../docs/cli.md#wish-desktop)
 for the user-facing behavior.
 
@@ -262,10 +308,11 @@ The split follows where the information lives:
 The desktop's settings -- `appearance` (wallpaper, background, theme,
 desktop icons), `taskbar` (clock formats) and `start_menu` -- are sections of
 a per-user file,
-`~/.wish/desktop/desktop.yaml` (`--config`; format in
-[docs/desktop-config.md](../docs/desktop-config.md)). It is a plain file next
-to the persistent stores (`default_store_dir()`, in `wish_client` so the
-client-only `wish-desktop` can use it), not a store entry, so users can edit
+`~/.wish/users/<user>/desktop/desktop.yaml` (`--config`; format in
+[docs/desktop-config.md](../docs/desktop-config.md)), in the profile of the
+user the desktop connects as. It is a plain file in the wish home
+(`wish_home::user_desktop_config()`, in `wish_client` so the client-only
+`wish-desktop` can use it), not a store entry, so users can edit
 it with any editor, and the server store stays unreachable over RMI. The
 top level is a map of sections so later settings can be added without a
 format change; unknown sections and settings are ignored, and missing ones
@@ -410,9 +457,20 @@ keeps an MRU list), not focused this frame, because clicking the taskbar
 takes focus itself.
 
 The chrome is drawn with the shell session's style (`imgui_renderer::
-with_session_style()`/`session_style()`), so the tray's theme toggle (which
+with_session_style()`/`session_style()`), so the tray's theme menu (which
 the bridge applies through `__WishStyle.preset` on that session) restyles
 the chrome and every client window together.
+
+The themes offered are never a hard-coded list. `register_theme()` (the
+ImGui backend) also records each theme in a renderer-agnostic catalog,
+`registered_themes()` in `src/context/style_service.hpp`, so a theme a
+project registers shows up everywhere at once: the tray menu reads the
+catalog directly (it is drawn server-side), and the bridge -- a separate
+process -- fetches it with `__WishStyle.themes` on connect, for the
+Settings choices of `wish.desktop.theme` and for `toggle_theme`'s cycle. The
+server overlay derives its palette from the chosen theme's `ImGuiStyle`
+(window, frame and text colors; its most saturated accent-like color as the
+accent), keeping its own look as the default.
 
 ### Locking
 
@@ -435,7 +493,7 @@ for each child, `exit_cb` to reap it, `uv_process_kill` to terminate it,
 code. Each child gets this process's environment plus
 `WISH_TRANSPORT/HOST/PORT/NAME` for the downstream side (a wildcard bind
 host becomes loopback) and writes stdout/stderr to
-`wish_logs/desktop/<entry id>_<n>.log`, never to the desktop's terminal.
+`<wish_home>/logs/desktop/<entry id>_<n>.log`, never to the desktop's terminal.
 The entry's `env` goes on top and its `cwd` is applied. The entry point sets
 what `{wish_client}` expands to: `<wish> client` in the combined `wish`
 binary, the sibling `wish-client` for the standalone `wish-desktop`. `wish_desktop_app::wait_for_shutdown()`
@@ -462,6 +520,9 @@ wish_desktop_app::run()
     print "already running" and exit 1
   export WISH_TRANSPORT/HOST/PORT/NAME for the anchor terminal
   bridge_app::run()
+    make_upstream_transport() → nullptr (the --upstream_* flags), or with
+                        --with_server: start the in-process server on a
+                        memory transport, connect to it
     make_bridge()     → multi_server_transport(downstream + endpoint);
                         wish_desktop on it, configured with launcher, client
                         command, launch environment, log dir, wallpaper,
@@ -471,12 +532,45 @@ wish_desktop_app::run()
     on_listening()    → desktop_->build_chrome() (loads the config, starts
                         the file watcher)
     wait_for_shutdown() → until "Quit desktop", the anchor terminal exits,
-                          or the upstream connection is lost;
+                          the upstream connection is lost, or the
+                          --with_server server quits;
                           then terminates launched apps and stops the
                           worker and watcher (stop_tasks()) while the
                           upstream connection is still open
     bridge::stop()
+  stop the --with_server server
 ```
+
+### `--with_server`: the server in the desktop's process
+
+When the server and the desktop share a machine, `--with_server` runs both
+in one process, so there is one command to start. The bridge still talks to
+the server through RMI, over a `memory_server_transport`/
+`memory_client_transport` pair instead of a socket, pipe or terminal hop:
+the desktop's logic (sessions grouped per app, the `__WishDesktop`
+object, the relay) is all in `rmi::bridge`, which needs a client transport
+upstream. Running the shell directly against the server's objects would
+have meant a second desktop implementation.
+
+- **Hook.** `bridge_app::run()` used to build the upstream transport only
+  from the `--upstream_*` flags. bison gained
+  `bridge_app::make_upstream_transport()` (default `nullptr`: use the
+  flags); `wish_desktop_app` overrides it to create the memory transport,
+  start the server on it, and return a client endpoint connected to it.
+  The `--upstream_*` transport flags are then ignored, and the anchor
+  terminal reads stdin as with any non-`term` upstream.
+- **Server construction is injected** (`set_server_factory()`), like the
+  client command: `wish_desktop_app.cpp` is also built into the
+  client-only `wish-desktop`, which doesn't link the server or its
+  renderers. `main.cpp` (the combined `wish`) supplies a factory that
+  builds a `configured_server` (`server/wish_server_app.hpp`), the same
+  flag-configured server `wish server` runs, after applying `wish server`'s
+  saved defaults. Without a factory, `--with_server` is an error.
+- **Lifetime.** `wait_for_shutdown()` also returns once the server wants to
+  quit (window closed, or "Shut down server", which reaches the server as
+  `DesktopShell.shutdown` exactly as with a separate server). `run()`
+  destroys the server only after `bridge_app::run()` returns, i.e. after
+  the bridge, the server's only client, has disconnected.
 
 ### Fixed endpoint and single instance
 

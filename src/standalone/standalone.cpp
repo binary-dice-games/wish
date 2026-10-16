@@ -3,16 +3,23 @@
 /// @brief Implementation of wish::standalone.
 #include <standalone/standalone.hpp>
 
+#include <client/notification_rpc.hpp>
+#include <client/style_rpc.hpp>
 #include <client/user_store_rpc.hpp>
 #include <context/file_service.hpp>
 #include <server/registry.hpp>
 #include <context/style_service.hpp>
 #include <context/user_store_service.hpp>
+#include <server/notification_service.hpp>
 #include <ui/ui_descriptor.hpp>
 #include <ui/ui_root.hpp>
 
 #ifdef WISH_AUTOMATION_ENABLED
 #include <automation/automation_service.hpp>
+#endif
+
+#ifdef WISH_MEDIA_ENABLED
+#include <media/media_service.hpp>
 #endif
 
 #include <algorithm>
@@ -80,24 +87,32 @@ void standalone::on_session_created(bison::rmi::context& ctx) {
     auto sess = context_wlock{*context_};
     sess->emit_event = ctx.emit_event;
     sess->allow_absolute_paths = allow_absolute_paths_;
-    if (!persistent_sandbox_root_.empty() && is_safe_sandbox_identity(persistent_identity_))
-      sess->adopt_persistent_resource_dir(persistent_sandbox_root_ / persistent_identity_);
+    const std::string identity = normalize_identity(user_identity_);
+    if (persistent_sandboxes_ && !identity.empty())
+      sess->adopt_persistent_resource_dir(home().user_sandbox_dir(identity));
     sess->file_service = file_service::instantiate(sess->resource_dir);
     sess->style_service = style_service::instantiate();
     sess->logger_service = logger_;
     sess->server_store = stores_->server_store();
-    const std::string& identity = !user_identity_.empty() ? user_identity_ : persistent_identity_;
     sess->identity = identity;
     sess->settings_admin = true; // one local user, who owns the server store too
     if (auto store = stores_->user_store(identity)) {
       sess->user_store = store;
       sess->user_store_service = user_store_service::instantiate(std::move(store));
     }
+    if (renderer_) {
+      sess->notifications = renderer_->notifications();
+      sess->notification_service = notification_service::instantiate(sess->notifications, identity);
+    }
 #ifdef WISH_AUTOMATION_ENABLED
     if (renderer_) {
       if (auto* backend = renderer_->as_automation_backend())
         sess->automation_service = automation_service::instantiate(backend, logger_);
     }
+#endif
+#ifdef WISH_MEDIA_ENABLED
+    if (renderer_)
+      sess->media_service = media::media_service::instantiate(sess->resource_dir, sess->allow_absolute_paths);
 #endif
     on_session_created(*sess);
   }
@@ -120,6 +135,18 @@ void standalone::on_session_created(bison::rmi::context& ctx) {
   } catch (...) {
     user_store_proxy_.reset();
   }
+  // Non-fatal: without a renderer there is no notification service.
+  try {
+    notifications_proxy_ = instantiate("wish"_key, "__WishNotifications"_key).get();
+  } catch (...) {
+    notifications_proxy_.reset();
+  }
+  // Non-fatal: built without media support, or no renderer.
+  try {
+    media_proxy_ = std::make_shared<bison::rmi::proxy::dynamic>(instantiate("wish"_key, "__WishMedia"_key).get());
+  } catch (...) {
+    media_proxy_.reset();
+  }
 }
 
 void standalone::on_session_destroyed(bison::rmi::context& ctx) {
@@ -128,11 +155,17 @@ void standalone::on_session_destroyed(bison::rmi::context& ctx) {
     return;
   auto lock = context_wlock{*context_};
   on_session_destroyed(*lock);
+#ifdef WISH_MEDIA_ENABLED
+  if (lock->media_service) {
+    for (const auto& name : lock->media_service->names())
+      lock->media_service->close(name);
+  }
+#endif
 }
 
 bison::dynamic_ptr standalone::on_create_object(bison::rmi::context& ctx, bison::key_t ns, bison::key_t klass) {
   if (context_ && detail::current_context) {
-    if (auto svc = detail::find_singleton_service(*detail::current_context, klass))
+    if (auto svc = detail::find_singleton_service(*detail::current_context, klass, &ctx))
       return svc;
   }
 
@@ -189,6 +222,11 @@ void standalone::render_loop() {
         last_tick_time_ = now;
         renderer_->tick(sessions_snapshot);
       }
+
+#ifdef WISH_MEDIA_ENABLED
+      // See the matching comment in wish::server::render_loop().
+      media::pump_sessions(*renderer_, sessions_snapshot);
+#endif
 
       // render_on_demand() renderers don't treat routine poll_events()
       // activity (WS traffic, resize, ...) as a reason to draw -- only
@@ -302,6 +340,7 @@ void standalone::render_loop() {
           if (!events.empty())
             context_wlock{*context_}->dirty.store(kDirtySettleFrames, std::memory_order_release);
         }
+        renderer_->render_server_overlay(sessions_snapshot);
         renderer_->end_frame();
         if (!renderer_->render_on_demand() && renderer_->wants_continuous_redraw())
           pending_render_ = true;
@@ -447,6 +486,21 @@ std::future<std::string> standalone::create_temp_dir(const std::string& qualifie
   });
 }
 
+std::future<bool> standalone::sync_resource_package(
+    const std::string& name,
+    const std::filesystem::path& local_zip,
+    const std::string& dest_path,
+    transfer_progress_callback on_progress,
+    resource_sync_callback on_done) {
+  return std::async(std::launch::async, [this, name, local_zip, dest_path, on_progress, on_done]() {
+    return detail::run_resource_sync(*fs_proxy_, name, local_zip, dest_path, on_progress, on_done);
+  });
+}
+
+std::future<std::vector<theme_info>> standalone::list_themes() {
+  return std::async(std::launch::async, [this]() { return detail::list_themes_sync(*style_proxy_); });
+}
+
 std::future<void> standalone::set_style_preset(const std::string& name) {
   return std::async(std::launch::async, [this, name]() {
     dynamic args;
@@ -511,6 +565,27 @@ std::future<void> standalone::describe_settings_category(const settings::categor
     detail::require_user_store(user_store_proxy_);
     auto lock = describe_lock_.wlock();
     detail::describe_category_sync(*user_store_proxy_, info);
+  });
+}
+
+std::future<uint64_t> standalone::notify(const notification& n) {
+  return std::async(std::launch::async, [this, n]() {
+    detail::require_notifications(notifications_proxy_);
+    return detail::notify_sync(*notifications_proxy_, n);
+  });
+}
+
+std::future<bool> standalone::dismiss_notification(uint64_t id) {
+  return std::async(std::launch::async, [this, id]() {
+    detail::require_notifications(notifications_proxy_);
+    return detail::dismiss_notification_sync(*notifications_proxy_, id);
+  });
+}
+
+std::future<media_player> standalone::open_media(
+    const std::string& name, const std::string& path, const media_options& options) {
+  return std::async(std::launch::async, [this, service = media_proxy_, name, path, options]() {
+    return detail::open_media_sync(service, [this](bison::key_t id) { return make_proxy(id); }, name, path, options);
   });
 }
 

@@ -42,6 +42,10 @@ jclass g_event_handler_class = nullptr;
 jmethodID g_event_handler_on_event = nullptr;
 jclass g_session_callback_class = nullptr;
 jmethodID g_session_callback_run = nullptr;
+jclass g_sync_listener_class = nullptr;
+jmethodID g_sync_listener_on_update = nullptr;
+jclass g_media_listener_class = nullptr;
+jmethodID g_media_listener_on_event = nullptr;
 
 JNIEnv* attach(bool* attached) {
   JNIEnv* env = nullptr;
@@ -110,6 +114,64 @@ void JNICALL event_trampoline(bison_handle params, void* user) {
   if (attached) g_jvm->DetachCurrentThread();
 }
 
+/// Context for one `wish_sync_resource_package()` call; freed by
+/// `sync_trampoline` on the final (non-progress) report.
+struct sync_ctx {
+  jobject listener; // global ref to the ResourceSyncListener instance
+};
+
+void JNICALL sync_trampoline(
+    wish_client_handle,
+    const char* name,
+    wish_sync_state state,
+    uint64_t transferred,
+    uint64_t total,
+    const char* error,
+    void* user) {
+  auto* ctx = static_cast<sync_ctx*>(user);
+  bool attached = false;
+  JNIEnv* env = attach(&attached);
+  if (env) {
+    jstring j_name = env->NewStringUTF(name);
+    jstring j_error = error ? env->NewStringUTF(error) : nullptr;
+    env->CallVoidMethod(
+        ctx->listener, g_sync_listener_on_update, j_name, static_cast<jint>(state), static_cast<jlong>(transferred),
+        static_cast<jlong>(total), j_error);
+    if (env->ExceptionCheck()) {
+      env->ExceptionDescribe();
+      env->ExceptionClear();
+      log_error("wish_jni", "ResourceSyncListener threw; the exception could not cross the C ABI and was dropped");
+    }
+    if (j_name) env->DeleteLocalRef(j_name);
+    if (j_error) env->DeleteLocalRef(j_error);
+    if (state != WISH_SYNC_PROGRESS) env->DeleteGlobalRef(ctx->listener);
+  }
+  if (state != WISH_SYNC_PROGRESS) delete ctx;
+  if (attached) g_jvm->DetachCurrentThread();
+}
+
+/// One `MediaPlayer.setListener()` registration; freed by
+/// `nativeFreeListener` once the C side no longer references it.
+struct media_listener_ctx {
+  jobject listener; // global ref to the MediaListener instance
+};
+
+void JNICALL media_trampoline(wish_media_handle, int32_t event, int32_t state, const char* message, void* user) {
+  auto* ctx = static_cast<media_listener_ctx*>(user);
+  bool attached = false;
+  JNIEnv* env = attach(&attached);
+  if (!env) return;
+  jstring j_message = env->NewStringUTF(message ? message : "");
+  env->CallVoidMethod(ctx->listener, g_media_listener_on_event, static_cast<jint>(event), static_cast<jint>(state), j_message);
+  if (env->ExceptionCheck()) {
+    env->ExceptionDescribe();
+    env->ExceptionClear();
+    log_error("wish_jni", "MediaListener threw; the exception could not cross the C ABI and was dropped");
+  }
+  if (j_message) env->DeleteLocalRef(j_message);
+  if (attached) g_jvm->DetachCurrentThread();
+}
+
 }  // namespace
 
 extern "C" {
@@ -134,6 +196,17 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
   if (!session_local) return JNI_ERR;
   g_session_callback_class = static_cast<jclass>(env->NewGlobalRef(session_local));
   g_session_callback_run = env->GetMethodID(g_session_callback_class, "run", "(Lcom/bdg/wish/Client;)V");
+
+  jclass sync_local = env->FindClass("com/bdg/wish/ResourceSyncListener");
+  if (!sync_local) return JNI_ERR;
+  g_sync_listener_class = static_cast<jclass>(env->NewGlobalRef(sync_local));
+  g_sync_listener_on_update =
+      env->GetMethodID(g_sync_listener_class, "onUpdate", "(Ljava/lang/String;IJJLjava/lang/String;)V");
+
+  jclass media_local = env->FindClass("com/bdg/wish/MediaListener");
+  if (!media_local) return JNI_ERR;
+  g_media_listener_class = static_cast<jclass>(env->NewGlobalRef(media_local));
+  g_media_listener_on_event = env->GetMethodID(g_media_listener_class, "onEvent", "(IILjava/lang/String;)V");
 
   return JNI_VERSION_1_6;
 }
@@ -298,6 +371,27 @@ JNIEXPORT jint JNICALL Java_com_bdg_wish_Client_nativeUploadFile(
       static_cast<size_t>(len)));
 }
 
+JNIEXPORT jint JNICALL Java_com_bdg_wish_Client_nativeSyncResourcePackage(
+    JNIEnv* env, jclass, jlong handle, jstring name, jstring local_zip_path, jstring dest_path, jobject listener) {
+  jstring_view n(env, name);
+  jstring_view zip(env, local_zip_path);
+  jstring_view dest(env, dest_path);
+  auto* ctx = listener ? new sync_ctx{env->NewGlobalRef(listener)} : nullptr;
+  wish_error err = wish_sync_resource_package(
+      from_jlong<wish_client_handle>(handle), n.c_str(), zip.c_str(), dest.c_str(), ctx ? &sync_trampoline : nullptr,
+      ctx);
+  if (err != WISH_OK && ctx) {
+    // The listener never runs when the sync did not start.
+    env->DeleteGlobalRef(ctx->listener);
+    delete ctx;
+  }
+  return static_cast<jint>(err);
+}
+
+JNIEXPORT jint JNICALL Java_com_bdg_wish_Client_nativeWaitResourceSyncs(JNIEnv*, jclass, jlong handle) {
+  return static_cast<jint>(wish_wait_resource_syncs(from_jlong<wish_client_handle>(handle)));
+}
+
 JNIEXPORT jbyteArray JNICALL Java_com_bdg_wish_Client_nativeDownloadFile(
     JNIEnv* env, jclass, jlong handle, jstring name) {
   jstring_view n(env, name);
@@ -411,6 +505,123 @@ JNIEXPORT jstring JNICALL Java_com_bdg_wish_Client_nativeSettingsRead(JNIEnv* en
   jstring result = to_jstring(env, out);
   bison_free_string(out);
   return result;
+}
+
+// ─── Notifications ──────────────────────────────────────────────────────
+
+// Returns the notification's id (> 0), or the negative wish_error code.
+JNIEXPORT jlong JNICALL Java_com_bdg_wish_Client_nativeNotify(
+    JNIEnv* env,
+    jclass,
+    jlong handle,
+    jstring title,
+    jstring body,
+    jint kind,
+    jstring keys,
+    jint duration_ms,
+    jstring tag) {
+  jstring_view t(env, title);
+  jstring_view b(env, body);
+  jstring_view k(env, keys);
+  jstring_view g(env, tag);
+  uint64_t id = 0;
+  wish_error err =
+      wish_notify(from_jlong<wish_client_handle>(handle), t.c_str(), b.c_str(), kind, k.c_str(), duration_ms, g.c_str(), &id);
+  return err != WISH_OK ? static_cast<jlong>(err) : static_cast<jlong>(id);
+}
+
+JNIEXPORT jint JNICALL Java_com_bdg_wish_Client_nativeNotifyDismiss(JNIEnv*, jclass, jlong handle, jlong id) {
+  return static_cast<jint>(wish_notify_dismiss(from_jlong<wish_client_handle>(handle), static_cast<uint64_t>(id)));
+}
+
+// ─── Media playback ─────────────────────────────────────────────────────
+//
+// Like nativeNotify, calls that return a value return the negative
+// wish_error code on failure; the Java side throws with wish_last_error().
+
+JNIEXPORT jboolean JNICALL Java_com_bdg_wish_Client_nativeMediaAvailable(JNIEnv*, jclass, jlong handle) {
+  int avail = 0;
+  wish_media_available(from_jlong<wish_client_handle>(handle), &avail);
+  return avail ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jlong JNICALL Java_com_bdg_wish_Client_nativeMediaOpen(
+    JNIEnv* env, jclass, jlong handle, jstring name, jstring path, jint flags, jfloat volume) {
+  jstring_view n(env, name);
+  jstring_view p(env, path);
+  wish_media_handle media = nullptr;
+  wish_error err = wish_media_open(from_jlong<wish_client_handle>(handle), n.c_str(), p.c_str(), flags, volume, &media);
+  return err != WISH_OK ? static_cast<jlong>(err) : to_jlong(media);
+}
+
+JNIEXPORT jint JNICALL Java_com_bdg_wish_MediaPlayer_nativePlay(JNIEnv*, jclass, jlong media) {
+  return static_cast<jint>(wish_media_play(from_jlong<wish_media_handle>(media)));
+}
+
+JNIEXPORT jint JNICALL Java_com_bdg_wish_MediaPlayer_nativePause(JNIEnv*, jclass, jlong media) {
+  return static_cast<jint>(wish_media_pause(from_jlong<wish_media_handle>(media)));
+}
+
+JNIEXPORT jint JNICALL Java_com_bdg_wish_MediaPlayer_nativeStop(JNIEnv*, jclass, jlong media) {
+  return static_cast<jint>(wish_media_stop(from_jlong<wish_media_handle>(media)));
+}
+
+JNIEXPORT jint JNICALL Java_com_bdg_wish_MediaPlayer_nativeSeek(JNIEnv*, jclass, jlong media, jdouble seconds) {
+  return static_cast<jint>(wish_media_seek(from_jlong<wish_media_handle>(media), seconds));
+}
+
+JNIEXPORT jint JNICALL Java_com_bdg_wish_MediaPlayer_nativeSetVolume(JNIEnv*, jclass, jlong media, jfloat volume) {
+  return static_cast<jint>(wish_media_set_volume(from_jlong<wish_media_handle>(media), volume));
+}
+
+JNIEXPORT jint JNICALL Java_com_bdg_wish_MediaPlayer_nativeSetLoop(JNIEnv*, jclass, jlong media, jboolean loop) {
+  return static_cast<jint>(wish_media_set_loop(from_jlong<wish_media_handle>(media), loop ? 1 : 0));
+}
+
+// Fills out[10]: position, duration, volume, state, width, height,
+// has_video, has_audio, loop, audio_output.
+JNIEXPORT jint JNICALL Java_com_bdg_wish_MediaPlayer_nativeStatus(JNIEnv* env, jclass, jlong media, jdoubleArray out) {
+  wish_media_status s{};
+  wish_error err = wish_media_get_status(from_jlong<wish_media_handle>(media), &s);
+  if (err != WISH_OK) return static_cast<jint>(err);
+  const jdouble v[10] = {s.position, s.duration, s.volume, double(s.state), double(s.width), double(s.height),
+      double(s.has_video), double(s.has_audio), double(s.loop), double(s.audio_output)};
+  env->SetDoubleArrayRegion(out, 0, 10, v);
+  return WISH_OK;
+}
+
+JNIEXPORT jstring JNICALL Java_com_bdg_wish_MediaPlayer_nativeErrorMessage(JNIEnv* env, jclass, jlong media) {
+  char* text = nullptr;
+  if (wish_media_get_error(from_jlong<wish_media_handle>(media), &text) != WISH_OK) return nullptr;
+  jstring out = env->NewStringUTF(text ? text : "");
+  bison_free_string(text);
+  return out;
+}
+
+JNIEXPORT jlong JNICALL Java_com_bdg_wish_MediaPlayer_nativeSetListener(
+    JNIEnv* env, jclass, jlong media, jobject listener) {
+  auto* ctx = listener ? new media_listener_ctx{env->NewGlobalRef(listener)} : nullptr;
+  wish_error err =
+      wish_media_on_event(from_jlong<wish_media_handle>(media), ctx ? &media_trampoline : nullptr, ctx);
+  if (err != WISH_OK) {
+    if (ctx) {
+      env->DeleteGlobalRef(ctx->listener);
+      delete ctx;
+    }
+    return static_cast<jlong>(err);
+  }
+  return to_jlong(ctx);
+}
+
+JNIEXPORT void JNICALL Java_com_bdg_wish_MediaPlayer_nativeFreeListener(JNIEnv* env, jclass, jlong ctx_ptr) {
+  auto* ctx = from_jlong<media_listener_ctx*>(ctx_ptr);
+  if (!ctx) return;
+  env->DeleteGlobalRef(ctx->listener);
+  delete ctx;
+}
+
+JNIEXPORT void JNICALL Java_com_bdg_wish_MediaPlayer_nativeClose(JNIEnv*, jclass, jlong media) {
+  wish_media_close(from_jlong<wish_media_handle>(media));
 }
 
 // ─── Logging ────────────────────────────────────────────────────────────

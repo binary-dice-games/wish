@@ -2,7 +2,10 @@
 /// @file client.cpp
 /// @brief Implementation of wish::client.
 #include <client/client.hpp>
+#include <client/notification_rpc.hpp>
+#include <client/style_rpc.hpp>
 #include <client/user_store_rpc.hpp>
+#include <context/os_user.hpp>
 
 #include <ui/ui_descriptor.hpp>
 
@@ -20,7 +23,17 @@ using namespace bison;
 
 // ── client ────────────────────────────────────────────────────────────────────
 
+void client::apply_default_identity(bison::dynamic& params) {
+  if (params.findField("username"_key))
+    return;
+  if (const auto* f = params.findField("anonymous"_key); f && f->is<bool>() && f->as<bool>())
+    return;
+  if (auto user = os_user_name(); !user.empty())
+    params["username"_key] = std::move(user);
+}
+
 void client::run(bison::dynamic connect_params) {
+  apply_default_identity(connect_params);
   connect(std::move(connect_params));
   try {
     on_session();
@@ -33,7 +46,7 @@ void client::run(bison::dynamic connect_params) {
 
 void client::on_connect() {
   template_proxy_ = instantiate("wish"_key, "__WishTemplate"_key).get();
-  fs_proxy_ = instantiate("wish"_key, "__WishFileSystem"_key).get();
+  fs_proxy_ = std::make_shared<bison::rmi::proxy::dynamic>(instantiate("wish"_key, "__WishFileSystem"_key).get());
   style_proxy_ = instantiate("wish"_key, "__WishStyle"_key).get();
   log_proxy_ = instantiate("wish"_key, "__WishLogger"_key).get();
   // Non-fatal: unlike the protocol handlers above (always present), a
@@ -54,6 +67,18 @@ void client::on_connect() {
   } catch (...) {
     user_store_proxy_.reset();
   }
+  // Non-fatal too: a server without notifications (or an older one).
+  try {
+    notifications_proxy_ = instantiate("wish"_key, "__WishNotifications"_key).get();
+  } catch (...) {
+    notifications_proxy_.reset();
+  }
+  // Non-fatal too: a server built without media support (or an older one).
+  try {
+    media_proxy_ = std::make_shared<bison::rmi::proxy::dynamic>(instantiate("wish"_key, "__WishMedia"_key).get());
+  } catch (...) {
+    media_proxy_.reset();
+  }
 }
 
 void client::on_disconnect() {
@@ -63,6 +88,8 @@ void client::on_disconnect() {
   log_proxy_.reset();
   automation_proxy_.reset();
   user_store_proxy_.reset();
+  notifications_proxy_.reset();
+  media_proxy_.reset();
   if (on_disconnected_)
     on_disconnected_();
 }
@@ -301,6 +328,23 @@ client::upload_package(const std::string& dest_path, std::istream& package_strea
   });
 }
 
+std::future<bool> client::sync_resource_package(
+    const std::string& name,
+    const std::filesystem::path& local_zip,
+    const std::string& dest_path,
+    transfer_progress_callback on_progress,
+    resource_sync_callback on_done) {
+  return std::async(std::launch::async, [fs = fs_proxy_, name, local_zip, dest_path, on_progress, on_done]() {
+    if (!fs) {
+      resource_sync_result result{name, false, "wish: client is not connected"};
+      if (on_done)
+        on_done(result);
+      throw std::logic_error(result.error);
+    }
+    return detail::run_resource_sync(*fs, name, local_zip, dest_path, on_progress, on_done);
+  });
+}
+
 std::future<std::vector<std::string>> client::list_files(const std::string& path) {
   return std::async(std::launch::async, [this, path]() -> std::vector<std::string> {
     dynamic args;
@@ -343,6 +387,10 @@ std::future<void> client::set_style(bison::dynamic params) {
   });
 }
 
+std::future<std::vector<theme_info>> client::list_themes() {
+  return std::async(std::launch::async, [this]() { return detail::list_themes_sync(*style_proxy_); });
+}
+
 std::future<bison::dynamic> client::get_style() {
   return std::async(std::launch::async, [this]() -> dynamic { return style_proxy_->call("get"_key, dynamic{}).get(); });
 }
@@ -368,6 +416,31 @@ std::future<void> client::log_warn(const std::string& msg) {
 }
 std::future<void> client::log_error(const std::string& msg) {
   return log("error", msg);
+}
+
+// ── Notifications ───────────────────────────────────────────────────────────
+
+std::future<uint64_t> client::notify(const notification& n) {
+  return std::async(std::launch::async, [this, n]() {
+    detail::require_notifications(notifications_proxy_);
+    return detail::notify_sync(*notifications_proxy_, n);
+  });
+}
+
+std::future<bool> client::dismiss_notification(uint64_t id) {
+  return std::async(std::launch::async, [this, id]() {
+    detail::require_notifications(notifications_proxy_);
+    return detail::dismiss_notification_sync(*notifications_proxy_, id);
+  });
+}
+
+// ── Media playback ──────────────────────────────────────────────────────────
+
+std::future<media_player> client::open_media(
+    const std::string& name, const std::string& path, const media_options& options) {
+  return std::async(std::launch::async, [this, service = media_proxy_, name, path, options]() {
+    return detail::open_media_sync(service, [this](key_t id) { return make_proxy(id); }, name, path, options);
+  });
 }
 
 // ── User store ──────────────────────────────────────────────────────────────

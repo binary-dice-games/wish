@@ -17,6 +17,7 @@
  *                   [--downstream_port P] [--downstream_name PATH]
  *                   [--upstream_transport T] [--upstream_host H]
  *                   [--upstream_port P] [--upstream_name PATH] [--timeout MS]
+ *                   [--with_server [--renderer R] ...]
  *   wish <app>      [--transport T] [--host H] [--port P] [--name PATH]
  *                   [--timeout MS] [-- app-args...]
  *                   Alias for `wish client --run=<app> ...`, available when
@@ -73,6 +74,32 @@ DEFINE_string(ca_pem, "", "Trust anchor PEM, alternative to --ca_file (transport
 DEFINE_string(server_name, "", "SNI / hostname-verification target (client, transport=tls, default: --host)");
 DEFINE_bool(insecure_skip_verify, false, "Skip server certificate verification -- unsafe, dev/test only (client, transport=tls)");
 
+namespace {
+
+/// `wish desktop --with_server`: the `wish server` flags' server, run in the
+/// desktop's process.
+class desktop_server : public bdg::wish::in_process_server {
+ public:
+  explicit desktop_server(bdg::bison::rmi::transport::server_transport_iface& transport) : server_(transport) {}
+
+  bool should_quit() const override {
+    return server_.should_quit();
+  }
+
+ private:
+  bdg::wish::configured_server server_;
+};
+
+std::unique_ptr<bdg::wish::in_process_server> start_desktop_server(
+    bdg::bison::rmi::transport::server_transport_iface& transport) {
+  bdg::wish::load_server_cli_config("[wish desktop]");
+  auto srv = std::make_unique<desktop_server>(transport);
+  bdg::wish::configured_server::print_renderer_hint();
+  return srv;
+}
+
+} // namespace
+
 static void print_usage() {
   std::cout << "wish - remote GUI framework CLI\n"
                "\n"
@@ -87,6 +114,7 @@ static void print_usage() {
                "                  [--downstream_port P] [--downstream_name PATH]\n"
                "                  [--upstream_transport T] [--upstream_host H] [--upstream_port P]\n"
                "                  [--upstream_name PATH] [--timeout MS]\n"
+               "                  [--with_server [--renderer R] ...]\n"
                "  wish <app>      [--transport T] [--host H] [--port P] [--name PATH]\n"
                "                  [--timeout MS] [-- app-args...]\n"
                "                  Alias for `wish client --run=<app> ...`, when <app> is not\n"
@@ -143,6 +171,11 @@ static void print_usage() {
                "  --upstream_key_file/--upstream_key_pem, --upstream_key_password\n"
                "                          Upstream TLS client flags (upstream_transport=tls)\n"
                "\n"
+               "...or, instead of an upstream connection, --with_server runs the wish server in\n"
+               "the desktop's process over an in-memory transport (wish server flags such as\n"
+               "--renderer, --title, --width/--height and --web_port apply):\n"
+               "  wish desktop --with_server --renderer sdl3\n"
+               "\n"
                "wish server and wish standalone also accept:\n"
                "  --save_defaults   Save the flags given on this command line as the defaults\n"
                "                    of later runs (kept in the server store under --store_dir)\n"
@@ -194,6 +227,7 @@ int main(int argc, char** argv) {
     // Apps launched from the desktop run as `wish client --run=<app>` of
     // this same binary.
     app.set_client_command({bdg::wish::process_launcher::self_exe_path().string(), "client"});
+    app.set_server_factory(start_desktop_server);
     return app.run(sub_argc, sub_argv);
   }
 

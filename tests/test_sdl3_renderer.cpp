@@ -5,6 +5,9 @@
 
 #include <SDL3/SDL.h>
 
+#include <cstdint>
+#include <vector>
+
 namespace bdg::wish {
 
 // Exposes the protected sdl_renderer() accessor so this test can issue
@@ -110,6 +113,26 @@ TEST_F(Sdl3RendererTest, EndRenderTargetRestoresPreviousTarget) {
   renderer_->end_render_target();
 }
 
+// request_screenshot() (the server overlay's Screenshot button) works
+// without the automation module: the next end_frame() reads the frame back.
+TEST_F(Sdl3RendererTest, RequestScreenshotDeliversPngOfNextFrame) {
+  std::vector<uint8_t> png;
+  int calls = 0;
+  ASSERT_TRUE(renderer_->request_screenshot([&](std::vector<uint8_t> bytes) {
+    png = std::move(bytes);
+    ++calls;
+  }));
+  renderer_->begin_frame();
+  renderer_->end_frame();
+  ASSERT_EQ(calls, 1);
+  ASSERT_GE(png.size(), 8u);
+  EXPECT_EQ(png[0], 0x89);
+  EXPECT_EQ(png[1], static_cast<uint8_t>('P'));
+  renderer_->begin_frame();
+  renderer_->end_frame();
+  EXPECT_EQ(calls, 1) << "one request, one capture";
+}
+
 TEST_F(Sdl3RendererTest, EndRenderTargetWithoutBeginIsSafeNoOp) {
   EXPECT_NO_THROW(renderer_->end_render_target());
 }
@@ -163,4 +186,39 @@ TEST_F(Sdl3RendererTest, FlushDrawListWithNonPositiveSizeIsSafeNoOp) {
   draw_list._ResetForNewFrame();
   EXPECT_NO_THROW(renderer_->flush_draw_list(draw_list, 0, 0));
   EXPECT_NO_THROW(renderer_->flush_draw_list(draw_list, -1, 4));
+}
+
+// ── Window close ────────────────────────────────────────────────────────────
+
+namespace {
+
+void push_close_request(SDL_Renderer* r) {
+  SDL_Event ev{};
+  ev.type = SDL_EVENT_WINDOW_CLOSE_REQUESTED;
+  ev.window.windowID = SDL_GetWindowID(SDL_GetRenderWindow(r));
+  ASSERT_TRUE(SDL_PushEvent(&ev));
+}
+
+} // namespace
+
+TEST_F(Sdl3RendererTest, ClosingTheWindowQuitsByDefault) {
+  push_close_request(renderer_->sdl_renderer());
+  renderer_->poll_events();
+  EXPECT_TRUE(renderer_->should_quit());
+  EXPECT_FALSE(renderer_->consume_close_request());
+}
+
+TEST_F(Sdl3RendererTest, ConfirmCloseReportsTheRequestInsteadOfQuitting) {
+  renderer_->set_confirm_close(true);
+  push_close_request(renderer_->sdl_renderer());
+  EXPECT_TRUE(renderer_->poll_events());
+  EXPECT_FALSE(renderer_->should_quit());
+  EXPECT_TRUE(renderer_->consume_close_request());
+  EXPECT_FALSE(renderer_->consume_close_request()); // cleared
+
+  SDL_Event quit{};
+  quit.type = SDL_EVENT_QUIT; // Ctrl+C / an OS-level quit still quits
+  ASSERT_TRUE(SDL_PushEvent(&quit));
+  renderer_->poll_events();
+  EXPECT_TRUE(renderer_->should_quit());
 }

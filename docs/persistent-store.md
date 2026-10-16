@@ -4,14 +4,15 @@ wish gives tools two places to keep data between sessions and server restarts:
 
 | Store | Scope | Who can reach it | File |
 |-------|-------|------------------|------|
-| **Server store** | One per server, shared by every session | Server-side code only (forms, `wish::server` subclasses) | `<store_dir>/server_store.bison` |
-| **User store** | One per authenticated identity | That identity's clients (every client API) and server-side code handling its sessions | `<store_dir>/users/<identity>.bison` |
+| **Server store** | One per server, shared by every session | Server-side code only (forms, `wish::server` subclasses) | `<wish_home>/server/store.bison` |
+| **User store** | One per authenticated identity | That identity's clients (every client API) and server-side code handling its sessions | `<wish_home>/users/<identity>/store.bison` |
 
-`<store_dir>` defaults to `~/.wish` on the server machine (`$HOME`, or
-`%USERPROFILE%` on native Windows). Change it with `wish server --store_dir`,
-`wish standalone --store_dir`, `wish::server::set_store_dir()`,
-`wish::standalone::set_store_dir()`, or the `store_dir` param of
-`wish_server_start()`.
+`<wish_home>` defaults to `~/.wish` on the server machine (`$WISH_HOME`, else
+`$HOME`, or `%USERPROFILE%` on native Windows). Change it with
+`--wish_home` (`wish server`, `wish standalone`, `wish desktop`),
+`wish::server::set_home()`, `wish::standalone::set_home()`, or the
+`wish_home` param of `wish_server_start()`. See [wish-home.md](wish-home.md)
+for everything else kept there.
 
 Each store holds **named entries**, and each entry is a bison object
 (`bison::dynamic`). Nested objects, typed fields (`bool`, `int32_t`, `float`,
@@ -23,19 +24,21 @@ A session has a user store only if it has an **identity**. The identity comes
 from the server's auth module when the client connects:
 
 - `wish server` (CLI) and `wish_server_start()` (C ABI) always install
-  `wish::local_auth_module`. It trusts the client's `username` connect field
-  (`wish client --username NAME`, or `{"username": ...}` in the connect params
-  of any binding).
-- A client without a username is **anonymous** and has no user store. The
-  exception is `wish server --sandbox_root`, which keeps its `default`
-  identity fallback, so every client gets one.
-- `wish standalone` is single-user. It always uses `--username`, or `default`
-  when none is given.
+  `wish::local_auth_module`. It trusts the client's `username` connect field.
+- Clients send the logged-in **OS user** by default (`wish::client::run()`,
+  the C ABI and so every binding, `wish client`). Override it with
+  `wish client --username NAME` or `{"username": ...}` in the connect params.
+- A client that passes `--anonymous` (`{"anonymous": true}`), or a server
+  with no auth module, gives an **anonymous** session: no user store.
+- `wish standalone` is single-user. It uses `--username`, else the OS user,
+  unless `--anonymous`.
 - An embedder that calls `wish::server::start()` with no auth module has only
   anonymous sessions. Pass an `auth_module_iface` to identify clients (see
   [src/auth/DESIGN.md](../src/auth/DESIGN.md)).
 
-Identities must be a single safe path segment: no `/`, `\` or `..`. Any other
+Identities are normalized before use: ASCII letters are lowercased and
+spaces become `_`, so `Alice` and `alice` share one profile. The result must
+be 1-64 characters of `[a-z0-9._-]`, not starting with `.`; any other
 identity is treated as anonymous.
 
 `local_auth_module` trusts whatever name the client sends. Use it only for
@@ -89,8 +92,8 @@ shared sandbox root (see `src/auth/DESIGN.md`).
   their writes don't overwrite each other.
 - The stores are thread-safe and carry their own lock. Server-side code
   doesn't need the session lock to use them.
-- Two server *processes* sharing one `store_dir` don't coordinate: the last
-  writer wins. Give each server its own `--store_dir` if several run at once.
+- Two server *processes* sharing one wish home don't coordinate: the last
+  writer wins. Give each server its own `--wish_home` if several run at once.
 - Files are created only on the first write. A server that never writes
   creates nothing.
 
@@ -163,5 +166,5 @@ client.run(session, params={"username": "alice"})
   so the Settings tool can edit them.
 - [src/auth/DESIGN.md](../src/auth/DESIGN.md): auth modules, identities and
   persistent sandbox directories.
-- [docs/cli.md](cli.md): `--store_dir` and `--username`.
+- [docs/cli.md](cli.md): `--wish_home`, `--username` and `--anonymous`.
 - [docs/bindings.md](bindings.md): per-language setup.

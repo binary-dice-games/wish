@@ -30,7 +30,7 @@ class store_session {
  public:
   store_session() {
     srv_ = std::make_unique<capturing_server>(transport_, std::make_unique<bdg::wish::null_renderer>());
-    srv_->set_store_dir(dir_);
+    srv_->set_home(dir_);
     srv_->start(std::make_shared<bdg::wish::local_auth_module>());
   }
 

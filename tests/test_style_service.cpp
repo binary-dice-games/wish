@@ -320,3 +320,41 @@ TEST_F(StyleServiceTest, RenderSessionWithNoStyleJustRenders) {
     renderer_->end_frame();
   });
 }
+
+// ── Theme catalog ────────────────────────────────────────────────────────────
+
+TEST(ThemeCatalog, BuiltInThemesAreListedDefaultFirst) {
+  const auto themes = bdg::wish::registered_themes();
+  ASSERT_GE(themes.size(), 4u);
+  EXPECT_EQ(themes[0].name, "wish");
+  EXPECT_EQ(themes[0].label, "Wish");
+  EXPECT_TRUE(themes[0].is_light);
+  EXPECT_EQ(themes[1].name, "light");
+  EXPECT_EQ(themes[2].name, "dark");
+  EXPECT_FALSE(themes[2].is_light);
+  EXPECT_EQ(themes[3].name, "classic");
+  EXPECT_EQ(themes[3].label, "Classic");
+}
+
+TEST(ThemeCatalog, ProjectThemesShowUpWithTheirLabel) {
+  bdg::wish::register_theme("test_neon", ImGui::StyleColorsDark, /*is_light=*/false, "Neon Nights");
+  const auto info = bdg::wish::find_theme_info("test_neon");
+  ASSERT_TRUE(info);
+  EXPECT_EQ(info->label, "Neon Nights");
+  EXPECT_FALSE(info->is_light);
+  EXPECT_EQ(bdg::wish::registered_themes().back().name, "test_neon");
+  // Re-registering replaces it in place.
+  bdg::wish::register_theme("test_neon", ImGui::StyleColorsLight, /*is_light=*/true);
+  EXPECT_EQ(bdg::wish::find_theme_info("test_neon")->label, "Test_neon");
+  EXPECT_TRUE(bdg::wish::find_theme_info("test_neon")->is_light);
+  EXPECT_EQ(bdg::wish::registered_themes().back().name, "test_neon");
+}
+
+TEST(ThemeCatalog, NextThemeCyclesThroughAll) {
+  const auto themes = bdg::wish::registered_themes();
+  ASSERT_GE(themes.size(), 2u);
+  EXPECT_EQ(bdg::wish::next_theme(themes[0].name), themes[1].name);
+  EXPECT_EQ(bdg::wish::next_theme(themes.back().name), themes[0].name) << "wraps around";
+  EXPECT_EQ(bdg::wish::next_theme("no-such-theme"), themes[0].name);
+  EXPECT_FALSE(bdg::wish::find_theme_info("no-such-theme"));
+}

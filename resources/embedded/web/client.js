@@ -34,6 +34,8 @@
     CACHE_RESPONSE: 0x12,
     CLIPBOARD_TEXT: 0x13, // browser -> server: OS clipboard text before a paste
     CLIPBOARD_WRITE: 0x14, // server -> browser: text ImGui just copied/cut
+    SCREENSHOT_REQUEST: 0x15, // server -> browser: capture the next drawn frame
+    SCREENSHOT_DATA: 0x16, // browser -> server: that capture, as PNG bytes
     // Only meaningful when the server was built with -DWISH_ENABLE_AUTOMATION=ON
     // (see src/automation/DESIGN.md) -- a server built without it never
     // sends TREE_SNAPSHOT/LOG_EVENT and silently ignores QUERY_TREE, so
@@ -643,6 +645,10 @@
   // never decoded at all.
   let pendingFrameView = null;
   let frameRafScheduled = false;
+  // Set by SCREENSHOT_REQUEST: capture the canvas right after the next
+  // frame is drawn. It must be the same task as the draw -- a WebGL canvas
+  // without preserveDrawingBuffer is cleared once it has been composited.
+  let screenshotRequested = false;
   function scheduleFrameRender() {
     if (frameRafScheduled) return;
     frameRafScheduled = true;
@@ -652,6 +658,13 @@
         const frame = decodeFrame(pendingFrameView, 8);
         pendingFrameView = null;
         renderer.render(frame);
+        if (screenshotRequested) {
+          screenshotRequested = false;
+          canvas.toBlob((blob) => {
+            if (blob)
+              blob.arrayBuffer().then((buf) => send(encodeEnvelope(MSG.SCREENSHOT_DATA, new Uint8Array(buf))));
+          }, "image/png");
+        }
         // First FRAME processed means the canvas now shows something real --
         // Playwright scripts wait on this before interacting (see
         // src/automation/DESIGN.md's "Readiness").
@@ -875,6 +888,9 @@
         window.wish.logs.push(...event.logs);
         break;
       }
+      case MSG.SCREENSHOT_REQUEST:
+        screenshotRequested = true;
+        break;
       case MSG.CLIPBOARD_WRITE: {
         // ImGui just copied/cut this text server-side (Ctrl+C/Ctrl+X inside
         // some widget) -- push it to the real OS clipboard. Requires a

@@ -4,11 +4,14 @@
 #include <context/file_service.hpp>
 #include <ui/forms/form.hpp>
 #include <context/logger.hpp>
+#include <server/notification_service.hpp>
 #include <server/registry.hpp>
 #include <server/server.hpp>
 #include <context/style_service.hpp>
 #include <context/user_store_service.hpp>
 #include "src/rmi/shared/profiling.hpp"
+#include "src/rmi/transport/socket_transport.hpp"
+#include "src/rmi/transport/tls_socket_transport.hpp"
 #include <ui/ui_root.hpp>
 
 #ifdef WISH_AUTOMATION_ENABLED
@@ -16,6 +19,10 @@
 #endif
 
 #include "ui/ui_template.hpp"
+
+#ifdef WISH_MEDIA_ENABLED
+#include <media/media_service.hpp>
+#endif
 
 #include <chrono>
 #include <iomanip>
@@ -37,8 +44,23 @@ using namespace bison::rmi::transport;
 
 // ── server ────────────────────────────────────────────────────────────────────
 
+bool is_loopback_host(const std::string& host) {
+  return host == "localhost" || host == "::1" || host == "[::1]" || host.rfind("127.", 0) == 0;
+}
+
 server::server(server_transport_iface& transport, std::unique_ptr<renderer> r)
-    : bison::rmi::server(transport), renderer_(std::move(r)) {}
+    : bison::rmi::server(transport),
+      renderer_(std::move(r)),
+      network_transport_(dynamic_cast<socket_server_transport*>(&transport) != nullptr ||
+                         dynamic_cast<tls_socket_server_transport*>(&transport) != nullptr) {}
+
+void server::set_settings_admins(const std::set<std::string>& identities) {
+  settings_admins_.clear();
+  for (const auto& id : identities) {
+    if (auto normalized = normalize_identity(id); !normalized.empty())
+      settings_admins_.insert(std::move(normalized));
+  }
+}
 
 server::~server() {
   if (running_.load(std::memory_order_acquire)) {
@@ -99,6 +121,15 @@ void server::on_session_created(bison::rmi::context& ctx) {
   // All sessions share the same global logger instance (set via set_logger()).
   s.logger_service = logger_;
   s.server_store = stores_->server_store();
+  if (renderer_) {
+    s.notifications = renderer_->notifications();
+    // Anonymous until on_authenticated() names the session.
+    s.notification_service = notification_service::instantiate(s.notifications, {});
+  }
+#ifdef WISH_MEDIA_ENABLED
+  if (renderer_)
+    s.media_service = media::media_service::instantiate(s.resource_dir, s.allow_absolute_paths);
+#endif
 #ifdef WISH_AUTOMATION_ENABLED
   if (renderer_) {
     if (auto* backend = renderer_->as_automation_backend())
@@ -124,15 +155,24 @@ void server::on_session_destroyed(bison::rmi::context& ctx) {
     on_session_destroyed(s);
   } catch (...) {
   }
+#ifdef WISH_MEDIA_ENABLED
+  // Silence the session's players now; the render loop's snapshot may keep
+  // the context itself alive a little longer.
+  if (s.media_service) {
+    for (const auto& name : s.media_service->names())
+      s.media_service->close(name);
+  }
+#endif
 }
 
-void server::on_authenticated(bison::rmi::context& ctx, const std::string& identity) {
+void server::on_authenticated(bison::rmi::context& ctx, const std::string& raw_identity) {
   // The base class holds this context's wlock for the duration of this
   // call, as it does for the whole OP_CONNECT dispatch that triggers it.
-  if (identity.empty())
+  if (raw_identity.empty())
     return; // anonymous session: no user store, default temp sandbox
-  if (!is_safe_sandbox_identity(identity)) {
-    on_print(ctx.session_id, "[rmi] rejected unsafe identity: " + identity);
+  const std::string identity = normalize_identity(raw_identity);
+  if (identity.empty()) {
+    on_print(ctx.session_id, "[rmi] rejected unsafe identity: " + raw_identity);
     return;
   }
 
@@ -141,14 +181,20 @@ void server::on_authenticated(bison::rmi::context& ctx, const std::string& ident
   s.settings_admin = settings_admins_.count(identity) != 0;
   s.user_store = stores_->user_store(identity);
   s.user_store_service = user_store_service::instantiate(s.user_store);
+  if (s.notification_service)
+    s.notification_service->set_source(identity);
 
-  if (persistent_sandbox_root_.empty())
-    return; // no persistent sandboxes configured
-  s.adopt_persistent_resource_dir(persistent_sandbox_root_ / identity);
+  if (!persistent_sandboxes())
+    return;
+  s.adopt_persistent_resource_dir(home().user_sandbox_dir(identity));
   // Re-instantiate so the singleton __WishFileSystem object handed out by
   // find_singleton_service()/on_create_object() points at the persistent
   // directory instead of the temp one on_session_created() set up.
   s.file_service = file_service::instantiate(s.resource_dir);
+#ifdef WISH_MEDIA_ENABLED
+  if (s.media_service)
+    s.media_service->set_resource_dir(s.resource_dir);
+#endif
 }
 
 bison::dynamic_ptr server::on_create_object(bison::rmi::context& ctx, bison::key_t ns, bison::key_t klass) {
@@ -156,7 +202,7 @@ bison::dynamic_ptr server::on_create_object(bison::rmi::context& ctx, bison::key
   // detail::current_context already points at.
   auto& s = static_cast<context&>(ctx);
 
-  if (auto svc = detail::find_singleton_service(s, klass))
+  if (auto svc = detail::find_singleton_service(s, klass, &ctx))
     return svc;
 
   // form/ui_template hold a sync_context_ptr long-term (e.g. so destructors
@@ -234,6 +280,13 @@ void server::render_loop() {
         BISON_TRACE_SCOPE("tick");
         renderer_->tick(sessions_snapshot);
       }
+
+#ifdef WISH_MEDIA_ENABLED
+      // Every iteration, not only on drawn frames: new video frames and
+      // player events (an audio-only player ending) mark their session
+      // dirty, which is what schedules the frame that shows them.
+      media::pump_sessions(*renderer_, sessions_snapshot);
+#endif
 
       // render_on_demand() renderers don't treat routine poll_events()
       // activity (WS traffic, resize, ...) as a reason to draw -- only
@@ -396,6 +449,7 @@ void server::render_loop() {
           if (!events.empty())
             context_rlock{*sync_ctx}->dirty.store(kDirtySettleFrames, std::memory_order_release);
         }
+        renderer_->render_server_overlay(sessions_snapshot);
         renderer_->end_frame();
         if (!renderer_->render_on_demand() && renderer_->wants_continuous_redraw())
           pending_render_ = true;

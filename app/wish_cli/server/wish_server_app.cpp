@@ -11,6 +11,7 @@
 
 #include <auth/local_auth_module.hpp>
 #include <context/logger.hpp>
+#include <imgui/imgui_keyboard.hpp>
 #include <server/registry.hpp>
 #include <sdl/sdl3_renderer.hpp>
 #include <server/server.hpp>
@@ -44,34 +45,51 @@ DEFINE_string(title, "wish", "Window title");
 DEFINE_int32(width, 1280, "Window width in pixels");
 DEFINE_int32(height, 720, "Window height in pixels");
 DEFINE_int32(font_size, 16, "Font size in pixels");
-DEFINE_string(renderer, "web", "Rendering backend: sdl3 or web (standalone also takes none: no UI)");
+// sdl3 by default: video playback (the Video widget) is smoothest in a native
+// window. A binary built without SDL3 can only default to web.
+#ifdef WISH_SDL3_ENABLED
+#define WISH_DEFAULT_RENDERER "sdl3"
+#else
+#define WISH_DEFAULT_RENDERER "web"
+#endif
+DEFINE_string(renderer, WISH_DEFAULT_RENDERER, "Rendering backend: sdl3 or web (standalone also takes none: no UI)");
 // Deliberately NOT named --port: that flag is already bison's TCP RMI
 // transport port (see main.cpp), an unrelated concept from the web
 // renderer's HTTP/WebSocket port.
 DEFINE_int32(web_port, 8080, "HTTP/WebSocket port for --renderer web");
 DEFINE_string(web_bind, "127.0.0.1", "Bind address for --renderer web (localhost-only by default)");
-DEFINE_string(profiling_dir, "", "Directory for Perfetto trace output; empty disables profiling");
-DEFINE_bool(profiling_autostart, false, "Start capture immediately on server startup (requires --profiling_dir)");
+DEFINE_bool(profiling, false, "Enable the Perfetto profiler; traces go to <wish_home>/traces (or --profiling_dir)");
+DEFINE_string(profiling_dir, "", "Directory for Perfetto trace output; setting it also enables profiling");
+DEFINE_bool(profiling_autostart, false, "Start capture immediately on server startup (requires --profiling)");
 DEFINE_bool(allow_absolute_paths, false,
             "Allow widgets (e.g. editor, nano) to reference files by "
             "absolute path outside the session sandbox. Only enable for trusted, "
             "single-operator deployments -- see wish::server::set_allow_absolute_paths().");
 
-DEFINE_string(sandbox_root, "",
-              "Directory under which session sandboxes persist across connections: each client gets "
-              "<sandbox_root>/<username> (its --username, or 'default') instead of a temp directory "
-              "deleted on disconnect. Trusts the client-supplied username -- local/single-user "
-              "deployments only; see wish::server::set_persistent_sandbox_root().");
+DEFINE_string(persistent_sandboxes, "auto",
+              "Whether identified clients keep their sandbox across connections, in "
+              "<wish_home>/users/<username>/sandbox: true, false, or auto (on for pipe/term and "
+              "loopback TCP/TLS, off for a network-reachable bind). Trusts the client-supplied "
+              "username -- turn it on for a network bind only on a trusted network. Anonymous "
+              "clients always get a temporary sandbox.");
 DEFINE_string(
     settings_admins,
     "",
     "Comma-separated identities (--username) allowed to change server-wide settings, such as "
     "the saved default theme, from the settings tool (bdg/desktop/conf). Empty: nobody. "
     "Trusts the client-supplied username -- local/single-user deployments only.");
-DEFINE_string(store_dir, "",
-              "Directory holding the persistent server store and per-user stores (see "
-              "docs/persistent-store.md); empty: ~/.wish. Clients get a user store only when they "
-              "connect with --username.");
+DEFINE_string(overlay_hotkey, "Shift+F1",
+              "Key combination that opens the server overlay (clients, settings, logs, ...), e.g. "
+              "Shift+F1 or Ctrl+Shift+O; empty disables the overlay and its startup notification.");
+DEFINE_string(screenshot_dir, "",
+              "Directory the server overlay's Screenshot button saves PNG files to (created on demand); "
+              "empty: <wish_home>/screenshots.");
+
+DECLARE_string(wish_home);
+
+#ifndef WISH_VERSION_STRING
+#define WISH_VERSION_STRING "dev"
+#endif
 
 namespace bdg::wish {
 
@@ -80,28 +98,37 @@ namespace {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 // Flags --save_defaults never saves, on top of the ones config_flag_names()
-// always leaves out (--store_dir, secrets, gflags' own): the debug and
+// always leaves out (--wish_home, secrets, gflags' own): the debug and
 // security switches. Every other flag can be saved.
 const std::vector<std::string> kServerExcludedFlags = {
     "debugger",
+    "profiling",
     "profiling_dir",
     "profiling_autostart",
     "allow_absolute_paths",
     "settings_admins", // never from the store: an admin could otherwise make it permanent
 };
 
-static std::unique_ptr<renderer> make_renderer() {
+// The renderer selected by --renderer; @p host (optional) receives its
+// overlay face, to enable the server overlay once the server exists.
+static std::unique_ptr<renderer> make_renderer(server_overlay_host** host = nullptr) {
   if (FLAGS_renderer == "sdl3") {
 #ifdef WISH_SDL3_ENABLED
-    return std::make_unique<host_renderer<sdl3_renderer>>(
+    auto r = std::make_unique<host_renderer<sdl3_renderer>>(
         FLAGS_title.c_str(), FLAGS_width, FLAGS_height, FLAGS_font_size);
+    if (host)
+      *host = r.get();
+    return r;
 #else
     throw std::runtime_error("--renderer=sdl3 requested but this binary was built with WISH_ENABLE_SDL3=OFF");
 #endif
   }
   if (FLAGS_renderer == "web") {
 #ifdef WISH_WEB_ENABLED
-    return std::make_unique<host_renderer<web_renderer>>(FLAGS_web_bind, FLAGS_web_port, FLAGS_font_size);
+    auto r = std::make_unique<host_renderer<web_renderer>>(FLAGS_web_bind, FLAGS_web_port, FLAGS_font_size);
+    if (host)
+      *host = r.get();
+    return r;
 #else
     throw std::runtime_error("--renderer=web requested but this binary was built with WISH_ENABLE_WEB=OFF");
 #endif
@@ -117,14 +144,41 @@ static log_level verbose_flag_level() {
       "--verbose: invalid level '" + FLAGS_verbose + "' (expected none|fatal|error|warning|info|trace)");
 }
 
+// Where profiler traces go: --profiling_dir, else <wish_home>/traces with
+// --profiling; empty when profiling is off.
+std::filesystem::path profiling_dir(const wish_home& home) {
+  if (!FLAGS_profiling_dir.empty())
+    return FLAGS_profiling_dir;
+  return FLAGS_profiling ? home.traces_dir() : std::filesystem::path{};
+}
+
 static std::shared_ptr<logger> make_server_logger() {
   return std::make_shared<logger>(
       bison::dynamic::instantiate(bison::key_t{"wish"}, bison::key_t{"__WishLogger"}),
       verbose_flag_level(),
-      std::filesystem::path{"wish_logs"} / "server.log");
+      wish_home{FLAGS_wish_home}.logs_dir() / "server.log");
 }
 
 } // namespace
+
+std::string server_endpoint_description() {
+  using bison::app::transport_kind;
+  switch (bison::app::selected_transport()) {
+    case transport_kind::pipe:
+      return "pipe " + FLAGS_name;
+    case transport_kind::term:
+      return "terminal (" + (FLAGS_cmd.empty() ? std::string{"default shell"} : FLAGS_cmd) + ")";
+    case transport_kind::tls:
+      return "tls " + FLAGS_host + ':' + std::to_string(FLAGS_port);
+    case transport_kind::tcp:
+    default:
+      return "tcp " + FLAGS_host + ':' + std::to_string(FLAGS_port);
+  }
+}
+
+void load_server_cli_config(const std::string& log_prefix) {
+  load_cli_config(FLAGS_wish_home, kServerConfigEntry, kServerExcludedFlags, log_prefix);
+}
 
 // ── server_app overrides ──────────────────────────────────────────────────────
 
@@ -138,7 +192,7 @@ int wish_server_app::run(int argc, char** argv) {
   // Command line > WISH_<FLAG> env var > saved default > built-in default.
   apply_env_flag_defaults();
   gflags::ParseCommandLineFlags(&parse_argc, &parse_argv, true);
-  load_cli_config(FLAGS_store_dir, kServerConfigEntry, kServerExcludedFlags, "[wish server]");
+  load_server_cli_config("[wish server]");
   return bison::app::server_app::run(argc, argv);
 }
 
@@ -177,9 +231,7 @@ void wish_server_app::on_listening() const {
       break;
   }
 
-  if (FLAGS_renderer == "web") {
-    std::cout << "[wish] open http://" << FLAGS_web_bind << ':' << FLAGS_web_port << " in a browser\n" << std::flush;
-  }
+  configured_server::print_renderer_hint();
 }
 
 void wish_server_app::on_verbose_trace(bison::key_t /*session_id*/, const std::string& line) const {
@@ -193,10 +245,38 @@ std::unique_ptr<bison::rmi::server> wish_server_app::make_server(
 }
 
 int wish_server_app::run_with_transport(bison::rmi::transport::server_transport_iface& transport) {
-  server_log_ = make_server_logger();
-  auto srv_owner = make_server(transport);
-  auto& srv = static_cast<server&>(*srv_owner);
-  srv.set_logger(server_log_);
+  // Populates cert_file/key_file/etc. from FLAGS_* when --transport=tls
+  // selected it (see bison::app::server_app::on_listen_params()); a no-op
+  // for every other transport.
+  bison::dynamic listen_params;
+  on_listen_params(listen_params);
+  {
+    configured_server srv{transport, std::move(listen_params), server_endpoint_description()};
+    server_log_ = srv.log();
+    on_listening();
+    // Stops on whichever comes first: the renderer's own close signal (sdl3
+    // window close; web has none), or -- when --transport=term spawned a
+    // terminal -- that terminal process exiting. This is what lets --renderer
+    // web be stopped at all: it has no window and nothing installs a SIGINT
+    // handler for this process.
+    while (!srv.should_quit() && !is_shutdown_requested())
+      std::this_thread::sleep_for(std::chrono::milliseconds{50});
+  }
+  server_log_.reset();
+  return 0;
+}
+
+// ── configured_server ─────────────────────────────────────────────────────────
+
+configured_server::configured_server(
+    bison::rmi::transport::server_transport_iface& transport,
+    bison::dynamic listen_params,
+    std::string endpoint)
+    : log_(make_server_logger()) {
+  server_overlay_host* overlay_host = nullptr;
+  server_ = std::make_unique<server>(transport, make_renderer(&overlay_host));
+  auto& srv = *server_;
+  srv.set_logger(log_);
   srv.set_default_theme(FLAGS_theme);
   srv.set_default_language(FLAGS_lang);
   srv.set_allow_absolute_paths(FLAGS_allow_absolute_paths);
@@ -211,48 +291,87 @@ int wish_server_app::run_with_transport(bison::rmi::transport::server_transport_
     }
     srv.set_settings_admins(std::move(admins));
   }
-  // Populates cert_file/key_file/etc. from FLAGS_* when --transport=tls
-  // selected it (see bison::app::server_app::on_listen_params()); a no-op
-  // for every other transport.
-  bison::dynamic listen_params;
-  on_listen_params(listen_params);
-  if (!FLAGS_profiling_dir.empty())
-    srv.enable_profiling(FLAGS_profiling_dir);
-  if (!FLAGS_store_dir.empty())
-    srv.set_store_dir(FLAGS_store_dir);
-  server_log_->info("persistent stores under " + srv.store_dir().string());
-  // Always trust the client-supplied --username as the session identity, so
-  // identified clients get a user store; a client without one stays
-  // anonymous -- unless --sandbox_root is set, which keeps its 'default'
-  // fallback identity so every client gets a persistent sandbox.
-  bison::rmi::auth_module_ptr auth;
-  if (!FLAGS_sandbox_root.empty()) {
-    srv.set_persistent_sandbox_root(FLAGS_sandbox_root);
-    auth = std::make_shared<local_auth_module>("default");
-    server_log_->info("persistent sandboxes under " + FLAGS_sandbox_root);
+  srv.set_home(FLAGS_wish_home);
+  const wish_home& home = srv.home();
+  const std::filesystem::path trace_dir = profiling_dir(home);
+  if (!trace_dir.empty())
+    srv.enable_profiling(trace_dir);
+  if (FLAGS_persistent_sandboxes == "true") {
+    srv.set_persistent_sandboxes(true);
+  } else if (FLAGS_persistent_sandboxes == "false") {
+    srv.set_persistent_sandboxes(false);
   } else {
-    auth = std::make_shared<local_auth_module>();
+    if (FLAGS_persistent_sandboxes != "auto")
+      log_->info("--persistent_sandboxes: '" + FLAGS_persistent_sandboxes + "' is not true, false or auto; using auto");
+    // The server alone can't see a TCP/TLS bind address; a loopback bind
+    // only accepts local connections, like a pipe.
+    using bison::app::transport_kind;
+    const auto kind = bison::app::selected_transport();
+    if ((kind == transport_kind::tcp || kind == transport_kind::tls) && is_loopback_host(FLAGS_host))
+      srv.set_persistent_sandboxes(true);
+  }
+  log_->info("wish home: " + home.root().string() +
+             (srv.persistent_sandboxes() ? " (persistent sandboxes for identified clients)" : ""));
+  // Always trust the client-supplied --username as the session identity, so
+  // identified clients get a user store (and, with persistent sandboxes, a
+  // persistent sandbox); a client without one stays anonymous.
+  bison::rmi::auth_module_ptr auth = std::make_shared<local_auth_module>();
+  if (overlay_host && !FLAGS_overlay_hotkey.empty()) {
+    if (parse_key_chord(FLAGS_overlay_hotkey) == 0)
+      std::cerr << "[wish] --overlay_hotkey: '" << FLAGS_overlay_hotkey
+                << "' is not a key combination; the overlay is disabled\n";
+    server_overlay_info info;
+    info.version = WISH_VERSION_STRING;
+    info.hotkey = FLAGS_overlay_hotkey;
+    info.endpoint = std::move(endpoint);
+    info.renderer = FLAGS_renderer == "web"
+        ? "web (http://" + FLAGS_web_bind + ':' + std::to_string(FLAGS_web_port) + ")"
+        : FLAGS_renderer;
+    std::error_code ec;
+    info.log_file = std::filesystem::absolute(log_->path(), ec);
+    if (ec)
+      info.log_file = log_->path();
+    info.persistent_sandboxes = srv.persistent_sandboxes();
+    info.stores = srv.stores();
+    info.settings_admins = srv.settings_admins();
+    const std::filesystem::path shots =
+        FLAGS_screenshot_dir.empty() ? home.screenshots_dir() : std::filesystem::path{FLAGS_screenshot_dir};
+    info.screenshot_dir = std::filesystem::absolute(shots, ec);
+    if (ec)
+      info.screenshot_dir = shots;
+    if (!trace_dir.empty()) {
+      info.profiler.dir = std::filesystem::absolute(trace_dir, ec);
+      if (ec)
+        info.profiler.dir = trace_dir;
+      info.profiler.active = [&srv] { return srv.is_capture_active_now(); };
+      info.profiler.start = [&srv] { return srv.start_capture_now("overlay"); };
+      info.profiler.stop = [&srv] { srv.stop_capture_now(); };
+    }
+    overlay_host->enable_server_overlay(std::move(info));
   }
   srv.start(auth, std::move(listen_params));
   if (FLAGS_profiling_autostart) {
-    if (FLAGS_profiling_dir.empty())
-      server_log_->info("--profiling_autostart requires --profiling_dir; ignoring");
+    if (trace_dir.empty())
+      log_->info("--profiling_autostart requires --profiling; ignoring");
     else
       srv.start_capture_now("startup");
   }
-  server_log_->info("server started");
-  on_listening();
-  // Stops on whichever comes first: the renderer's own close signal (sdl3
-  // window close; web has none), or -- when --transport=term spawned a
-  // terminal -- that terminal process exiting. This is what lets --renderer
-  // web be stopped at all: it has no window and nothing installs a SIGINT
-  // handler for this process.
-  while (!srv.should_quit() && !is_shutdown_requested())
-    std::this_thread::sleep_for(std::chrono::milliseconds{50});
-  srv.stop_capture_now();
-  srv.stop();
-  server_log_.reset();
-  return 0;
+  log_->info("server started");
+}
+
+configured_server::~configured_server() {
+  server_->stop_capture_now();
+  server_->stop();
+}
+
+bool configured_server::should_quit() const {
+  return server_->should_quit();
+}
+
+void configured_server::print_renderer_hint() {
+  if (FLAGS_renderer == "web") {
+    std::cout << "[wish] open http://" << FLAGS_web_bind << ':' << FLAGS_web_port << " in a browser\n" << std::flush;
+  }
 }
 
 } // namespace bdg::wish

@@ -217,7 +217,7 @@ class CurlStoreTest : public ::testing::Test {
     dir_ = std::filesystem::temp_directory_path() / (std::string{"wish_curl_store_"} + info->name());
     std::filesystem::remove_all(dir_);
     srv_ = std::make_unique<wish::server>(transport_, std::make_unique<wish::null_renderer>());
-    srv_->set_store_dir(dir_);
+    srv_->set_home(dir_);
     srv_->start(std::make_shared<wish::local_auth_module>());
   }
 
@@ -255,7 +255,7 @@ TEST_F(CurlStoreTest, CollectionsAndEnvironmentsPersistAcrossSessions) {
     vars_payload["vars"_key] = dynamic_ptr{vars};
     s.source->on_save_environment_vars_requested(vars_payload);
   }
-  EXPECT_TRUE(std::filesystem::exists(dir_ / "users" / "alice.bison"));
+  EXPECT_TRUE(std::filesystem::exists(dir_ / "users" / "alice" / "store.bison"));
 
   recorded_calls().wlock()->clear();
   curl_session s{transport_, "alice"};

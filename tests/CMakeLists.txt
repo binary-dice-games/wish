@@ -10,10 +10,17 @@ set_target_properties(gtest_main PROPERTIES FOLDER extern)
 set_target_properties(gmock      PROPERTIES FOLDER extern)
 set_target_properties(gmock_main PROPERTIES FOLDER extern)
 
+# GoogleTest main for every wish test binary (in place of gtest_main): gives
+# each test process its own scratch WISH_HOME, so no test writes into the
+# real ~/.wish. Also linked by bindings/cpp's tests.
+add_library(wish_test_main STATIC wish_test_main.cpp)
+target_link_libraries(wish_test_main PUBLIC gtest)
+set_target_properties(wish_test_main PROPERTIES FOLDER tests)
+
 # Helper macro: creates a test executable linked against wish and GoogleTest.
 macro(wish_add_test TESTNAME)
     add_executable(${TESTNAME} ${ARGN})
-    target_link_libraries(${TESTNAME} PRIVATE wish gtest gmock gtest_main)
+    target_link_libraries(${TESTNAME} PRIVATE wish gtest gmock wish_test_main)
     gtest_discover_tests(${TESTNAME})
     set_target_properties(${TESTNAME} PROPERTIES FOLDER tests)
 endmacro()
@@ -61,6 +68,7 @@ target_link_libraries(test_file_service PRIVATE miniz)
 target_link_libraries(test_file_service PRIVATE civetweb-c-library)
 wish_add_test(test_logger         test_logger.cpp)
 wish_add_test(test_persistent_store test_persistent_store.cpp)
+wish_add_test(test_wish_home       test_wish_home.cpp)
 wish_add_test(test_settings_schema test_settings_schema.cpp)
 wish_add_test(test_user_store     test_user_store.cpp)
 wish_add_test(test_server         test_server.cpp)
@@ -89,7 +97,7 @@ add_executable(test_wish_desktop
 target_include_directories(test_wish_desktop PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/extern/bison/extern/json/single_include)
-target_link_libraries(test_wish_desktop PRIVATE wish gflags gtest gmock gtest_main uv_a)
+target_link_libraries(test_wish_desktop PRIVATE wish gflags gtest gmock wish_test_main uv_a)
 # The launcher tests run `cmake -E echo/environment/sleep` as a portable child.
 target_compile_definitions(test_wish_desktop PRIVATE CMAKE_COMMAND_PATH="${CMAKE_COMMAND}")
 gtest_discover_tests(test_wish_desktop)
@@ -103,13 +111,13 @@ add_executable(test_desktop_config
 target_include_directories(test_desktop_config PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/extern/bison/extern/json/single_include)
-target_link_libraries(test_desktop_config PRIVATE wish_client gtest gmock gtest_main)
+target_link_libraries(test_desktop_config PRIVATE wish_client gtest gmock wish_test_main)
 gtest_discover_tests(test_desktop_config)
 set_target_properties(test_desktop_config PROPERTIES FOLDER tests)
 
 # desktop_endpoint() (src/client/desktop_endpoint.hpp), part of wish_client.
 add_executable(test_desktop_endpoint test_desktop_endpoint.cpp)
-target_link_libraries(test_desktop_endpoint PRIVATE wish_client gtest gmock gtest_main)
+target_link_libraries(test_desktop_endpoint PRIVATE wish_client gtest gmock wish_test_main)
 gtest_discover_tests(test_desktop_endpoint)
 set_target_properties(test_desktop_endpoint PROPERTIES FOLDER tests)
 
@@ -117,7 +125,7 @@ set_target_properties(test_desktop_endpoint PROPERTIES FOLDER tests)
 # (app/wish_cli/client/desktop_transport_args.hpp, header-only).
 add_executable(test_desktop_transport_args test_desktop_transport_args.cpp)
 target_include_directories(test_desktop_transport_args PRIVATE ${CMAKE_SOURCE_DIR})
-target_link_libraries(test_desktop_transport_args PRIVATE gflags gtest gmock gtest_main)
+target_link_libraries(test_desktop_transport_args PRIVATE gflags gtest gmock wish_test_main)
 gtest_discover_tests(test_desktop_transport_args)
 set_target_properties(test_desktop_transport_args PROPERTIES FOLDER tests)
 
@@ -125,7 +133,7 @@ set_target_properties(test_desktop_transport_args PROPERTIES FOLDER tests)
 # lightweight client / heavy server CMake split actually works for a real
 # thin client -- see tests/test_client_only_link.cpp.
 add_executable(test_client_only_link test_client_only_link.cpp)
-target_link_libraries(test_client_only_link PRIVATE wish_client gtest gmock gtest_main)
+target_link_libraries(test_client_only_link PRIVATE wish_client gtest gmock wish_test_main)
 gtest_discover_tests(test_client_only_link)
 set_target_properties(test_client_only_link PROPERTIES FOLDER tests)
 
@@ -136,7 +144,7 @@ add_executable(test_env_flags
     test_env_flags.cpp
     ${CMAKE_SOURCE_DIR}/app/wish_cli/env_flags.cpp)
 target_include_directories(test_env_flags PRIVATE ${CMAKE_SOURCE_DIR})
-target_link_libraries(test_env_flags PRIVATE gflags gtest gmock gtest_main)
+target_link_libraries(test_env_flags PRIVATE gflags gtest gmock wish_test_main)
 gtest_discover_tests(test_env_flags)
 set_target_properties(test_env_flags PROPERTIES FOLDER tests)
 
@@ -147,7 +155,7 @@ add_executable(test_config_flags
     ${CMAKE_SOURCE_DIR}/app/wish_cli/config_flags.cpp
     ${CMAKE_SOURCE_DIR}/app/wish_cli/env_flags.cpp)
 target_include_directories(test_config_flags PRIVATE ${CMAKE_SOURCE_DIR})
-target_link_libraries(test_config_flags PRIVATE wish gflags gtest gmock gtest_main)
+target_link_libraries(test_config_flags PRIVATE wish gflags gtest gmock wish_test_main)
 gtest_discover_tests(test_config_flags)
 set_target_properties(test_config_flags PROPERTIES FOLDER tests)
 
@@ -155,6 +163,7 @@ if(WISH_ENABLE_IMGUI)
   wish_add_test(test_imgui_renderer test_imgui_renderer.cpp)
   wish_add_test(test_keyboard       test_keyboard.cpp)
   wish_add_test(test_desktop_shell test_desktop_shell.cpp)
+  wish_add_test(test_server_overlay test_server_overlay.cpp)
   wish_add_test(test_imgui_layout   test_imgui_layout.cpp)
   wish_add_test(test_drag_drop      test_drag_drop.cpp)
   wish_add_test(test_style_service  test_style_service.cpp)
@@ -162,6 +171,12 @@ endif()
 
 if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
   wish_add_test(test_sdl3_renderer test_sdl3_renderer.cpp)
+endif()
+
+if(WISH_ENABLE_MEDIA)
+  wish_add_test(test_media test_media.cpp)
+  # media_test_files.hpp encodes its test video with libavcodec directly.
+  target_link_libraries(test_media PRIVATE FFMPEG::FFMPEG)
 endif()
 
 if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3 AND WISH_ENABLE_AUTOMATION)
@@ -366,6 +381,10 @@ if(TARGET test_curl_response_parser)
   target_include_directories(test_curl_response_parser PRIVATE ${CMAKE_SOURCE_DIR})
 endif()
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_MC                 test_mc                test_mc.cpp)
+wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_MPV                test_mpv               test_mpv.cpp)
+if(TARGET test_mpv)
+  target_include_directories(test_mpv PRIVATE ${CMAKE_SOURCE_DIR})
+endif()
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_CONF               test_conf              test_conf.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_ZIP                test_zip               test_zip.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_DU                 test_du                test_du.cpp)

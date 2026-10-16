@@ -48,6 +48,23 @@ void render_slider_int(imgui_renderer&, const ui_element& node, const context& s
 void render_input_text(imgui_renderer&, const ui_element& node, const context& s);
 void render_color_edit(imgui_renderer&, const ui_element& node, const context& s);
 void render_image(imgui_renderer& r, const ui_element& node, const context& s);
+void render_video(imgui_renderer& r, const ui_element& node, const context& s);
+
+/// @brief Where a `Video` element draws: its box, and the frame inside it.
+struct video_layout {
+  ImVec2 size{0.0f, 0.0f};      ///< The element's size.
+  ImVec2 image_min{0.0f, 0.0f}; ///< Frame rect, relative to the box.
+  ImVec2 image_max{0.0f, 0.0f};
+};
+
+/**
+ * @brief Lays out a `Video` element (see video.cpp for the field rules).
+ * @param width, height  The `width`/`height` fields (0 natural, -1 fill).
+ * @param avail          Available content region.
+ * @param video_size     The video's pixel size; (0, 0) when unknown (16:9).
+ * @param keep_aspect    Letterbox the frame instead of stretching it.
+ */
+video_layout layout_video(int32_t width, int32_t height, ImVec2 avail, ImVec2 video_size, bool keep_aspect);
 void render_separator(imgui_renderer&, const ui_element&, const context&);
 void render_separator_text(imgui_renderer&, const ui_element& node, const context&);
 void render_vertical_layout(imgui_renderer& r, const ui_element& node, const context& s);

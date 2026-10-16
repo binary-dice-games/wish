@@ -28,6 +28,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <string>
 #include <unordered_map>
@@ -67,6 +68,7 @@ static const render_fn_map& built_in_render_fns() {
       {"SliderInt"_key.id, render_slider_int},
       {"InputText"_key.id, render_input_text},
       {"Image"_key.id, render_image},
+      {"Video"_key.id, render_video},
       {"Separator"_key.id, render_separator},
       {"SeparatorText"_key.id, render_separator_text},
       {"VerticalLayout"_key.id, render_vertical_layout},
@@ -148,8 +150,9 @@ static std::unordered_map<std::string, theme_entry>& theme_registry() {
   return registry;
 }
 
-void register_theme(const std::string& name, theme_fn fn, bool is_light) {
+void register_theme(const std::string& name, theme_fn fn, bool is_light, const std::string& label) {
   theme_registry()[name] = {fn, is_light};
+  add_theme_info({name, label, is_light});
 }
 
 // Fallback theme applied -- with a logged warning -- when a session's
@@ -164,11 +167,12 @@ static constexpr const char* kDefaultThemeName = "wish";
 // as file-local static initializers -- so registration doesn't depend on
 // whether that .cpp's object file happens to get pulled out of the static
 // archive (it only would if something else referenced a symbol from it).
+// The order is the order theme pickers list them: the default first.
 static bool register_built_in_themes() {
-  register_theme_dark();
-  register_theme_light();
-  register_theme_classic();
   register_theme_wish();
+  register_theme_light();
+  register_theme_dark();
+  register_theme_classic();
   return true;
 }
 static const bool built_in_themes_registered_ = register_built_in_themes();
@@ -373,7 +377,28 @@ void imgui_renderer::begin_frame() {
     io.DisplaySize = ImVec2(800.0f, 600.0f);
   if (io.DeltaTime <= 0.0f)
     io.DeltaTime = 1.0f / 60.0f;
+  release_retired_textures();
   ImGui::NewFrame();
+}
+
+void imgui_renderer::release_retired_textures() {
+  // A retired texture is first marked WantDestroyNextFrame: NewFrame() turns
+  // that into WantDestroy, the backend frees its copy at render time and
+  // reports Destroyed, and only then may it leave ImGui's user textures.
+  for (auto it = dying_textures_.begin(); it != dying_textures_.end();) {
+    if ((*it)->Status == ImTextureStatus_Destroyed) {
+      ImGui::UnregisterUserTexture(it->get());
+      it = dying_textures_.erase(it);
+    } else {
+      ++it;
+    }
+  }
+  auto retired = retired_textures_->wlock();
+  for (auto& tex : *retired) {
+    tex->WantDestroyNextFrame = true;
+    dying_textures_.push_back(std::move(tex));
+  }
+  retired->clear();
 }
 
 void imgui_renderer::end_frame() {
@@ -843,6 +868,64 @@ std::optional<ImVec2> imgui_renderer::claim_cascade_slot(const char* imgui_name,
   if (avail_y <= step)
     y = cascade_area_min_.y;
   return ImVec2(x, y);
+}
+
+namespace {
+
+// ImTextureData registered as an ImGui user texture; the backend uploads it.
+class imgui_dynamic_texture final : public dynamic_texture {
+ public:
+  using retired_list = bison::synchronized<std::vector<std::unique_ptr<ImTextureData>>>;
+
+  imgui_dynamic_texture(int w, int h, std::shared_ptr<retired_list> retired)
+      : tex_(std::make_unique<ImTextureData>()), retired_(std::move(retired)) {
+    tex_->Create(ImTextureFormat_RGBA32, w, h);
+    std::memset(tex_->GetPixels(), 0, static_cast<size_t>(tex_->GetSizeInBytes()));
+    for (int y = 0; y < h; ++y) // opaque black
+      for (int x = 0; x < w; ++x)
+        static_cast<unsigned char*>(tex_->GetPixelsAt(x, y))[3] = 0xFF;
+    ImGui::RegisterUserTexture(tex_.get());
+  }
+
+  // May run on any thread: hand the texture to the render thread, which
+  // destroys it through the backend (see imgui_renderer::begin_frame()).
+  ~imgui_dynamic_texture() override {
+    retired_->wlock()->push_back(std::move(tex_));
+  }
+
+  int width() const override {
+    return tex_->Width;
+  }
+  int height() const override {
+    return tex_->Height;
+  }
+
+  void update(const uint8_t* rgba, int pitch) override {
+    const size_t row = static_cast<size_t>(tex_->GetPitch());
+    for (int y = 0; y < tex_->Height; ++y)
+      std::memcpy(tex_->GetPixelsAt(0, y), rgba + static_cast<size_t>(y) * pitch, row);
+    // A texture still waiting for its first upload sends its pixels then.
+    if (tex_->Status == ImTextureStatus_OK || tex_->Status == ImTextureStatus_WantUpdates)
+      ImTextureDataQueueUpload(tex_.get(), 0, 0, tex_->Width, tex_->Height);
+  }
+
+  void* native_handle() const override {
+    return tex_.get();
+  }
+
+ private:
+  std::unique_ptr<ImTextureData> tex_;
+  std::shared_ptr<retired_list> retired_;
+};
+
+} // namespace
+
+dynamic_texture_ptr imgui_renderer::create_dynamic_texture(int w, int h) {
+  if (w <= 0 || h <= 0 || w > 4096 || h > 4096)
+    return nullptr;
+  if (!ImGui::GetCurrentContext() || !(ImGui::GetIO().BackendFlags & ImGuiBackendFlags_RendererHasTextures))
+    return nullptr;
+  return std::make_shared<imgui_dynamic_texture>(w, h, retired_textures_);
 }
 
 ImVec2 imgui_renderer::texture_size(const std::string& src) const {

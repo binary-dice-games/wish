@@ -216,4 +216,37 @@ bool open_in_host_explorer(const std::filesystem::path& path) {
 #endif
 }
 
+bool open_in_host_shell(const std::string& target) {
+#if defined(_WIN32)
+  std::filesystem::path p = target;
+  auto wide = p.wstring();
+  auto result =
+      reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr, L"open", wide.c_str(), nullptr, nullptr, SW_SHOWNORMAL));
+  return result > 32;
+#else
+  char* xdg_argv[] = {const_cast<char*>("xdg-open"), const_cast<char*>(target.c_str()), nullptr};
+  if (run_and_wait(xdg_argv))
+    return true;
+  if (!running_under_wsl())
+    return false;
+  // A URL goes to explorer.exe as is (it hands it to the default browser);
+  // a path must first be converted to its Windows form.
+  std::string win_target = target.find("://") != std::string::npos ? target : wsl_windows_path(target);
+  if (win_target.empty())
+    return false;
+  char* explorer_argv[] = {const_cast<char*>("explorer.exe"), const_cast<char*>(win_target.c_str()), nullptr};
+  // explorer.exe exits non-zero even on success; see open_in_host_explorer().
+  pid_t pid = fork();
+  if (pid == 0) {
+    execvp(explorer_argv[0], explorer_argv);
+    _exit(127);
+  }
+  if (pid < 0)
+    return false;
+  int status = 0;
+  waitpid(pid, &status, 0);
+  return WIFEXITED(status) && WEXITSTATUS(status) != 127;
+#endif
+}
+
 } // namespace bdg::wish

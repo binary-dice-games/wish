@@ -523,7 +523,7 @@ Changes made outside this directory:
 
 | Where | Change | Why |
 |---|---|---|
-| `app/wish_cli/standalone/` | `--renderer none` → `null_renderer`; with it, the log goes to the temp directory, not `./wish_logs` | Silent mode without a window or web server, leaving nothing in the caller's directory. |
+| `app/wish_cli/standalone/` | `--renderer none` → `null_renderer`; the log goes to `~/.wish/logs` as in every mode, never the working directory | Silent mode without a window or web server, leaving nothing in the caller's directory. |
 | `src/client/wish_app_host.hpp`, `wish_client_app`, `wish_standalone_session` | `set_exit_code(int)` (default: no-op, which the C ABI host keeps), returned from `on_session()` | A failed `render` must exit non-zero; an app could only `signal_done()`. |
 | `src/ui/ui_descriptor.cpp`, `src/ui/ui_importer.cpp` | Arrays of non-integer numbers are imported, and integer arrays widen for `float[]` fields | Found while building this: the importer dropped float arrays, so no JSON/YAML descriptor could carry plot data. `build_ui_node()` needs it for the bound descriptor. |
 | `src/imgui/imgui_renderer.hpp`/`.cpp` | `find_theme(name)` | Styling a private ImGui context with a registered theme; the registry was file-local. |

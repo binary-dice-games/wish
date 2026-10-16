@@ -463,7 +463,8 @@ use only the methods/events above).
     rewriting one fixed file would leave the pane stale (the bug curl hit).
     The file it replaces is deleted, and both current files are deleted on
     close, so at most one file per pane exists -- this matters with a
-    persistent `--sandbox_root`, which is not wiped on disconnect.
+    persistent sandbox (`~/.wish/users/<user>/sandbox`), which is not
+    wiped on disconnect.
   - **Under `private/`**: `docker inspect` output can carry secrets (env
     vars), and `private/` is excluded from the browser resource cache.
   - **`resource_dir_` is captured in `on_init()`**: the close path runs in

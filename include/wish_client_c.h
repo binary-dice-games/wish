@@ -220,6 +220,11 @@ WISH_API wish_error wish_client_run(wish_client_handle client, wish_session_fn s
  * wish_client_run() is a thin wrapper around this function with an empty
  * @p connect_params.
  *
+ * Without a "username" field (and without "anonymous" set to true), the
+ * session connects as the logged-in OS user. Pass "anonymous": true for a
+ * session with no identity: no user store, and a temporary sandbox deleted
+ * on disconnect.
+ *
  * @param client         Client handle from wish_client_tcp_create() (or
  *                       another wish_client_*_create() constructor).
  * @param session_fn     Session callback (must not be NULL).
@@ -652,14 +657,95 @@ WISH_API wish_error wish_download_file_to_path(wish_client_handle client, const 
 WISH_API wish_error
 wish_upload_package_from_path(wish_client_handle client, const char* dest_path, const char* local_zip_path);
 
+/* ── Resource packages ────────────────────────────────────────────────────── */
+
+/** @brief Kind of a wish_resource_sync_fn call. */
+typedef enum wish_sync_state {
+  WISH_SYNC_PROGRESS = 0, /**< A chunk was uploaded; more calls follow. */
+  WISH_SYNC_UPLOADED = 1, /**< Final call: the zip was uploaded and unpacked. */
+  WISH_SYNC_CACHED = 2, /**< Final call: the server already had this version. */
+  WISH_SYNC_FAILED = 3 /**< Final call: the sync failed; see @p error. */
+} wish_sync_state;
+
+/**
+ * @brief Progress and completion callback of wish_sync_resource_package().
+ *
+ * Runs on a background thread: zero or more WISH_SYNC_PROGRESS calls, then
+ * exactly one final call (any other state). Must not block on the RMI
+ * dispatch thread.
+ *
+ * @param client       Session handle the sync was started on.
+ * @param name         Package name.
+ * @param state        Kind of call.
+ * @param transferred  Bytes uploaded so far (== @p total when CACHED).
+ * @param total        Size of the local zip.
+ * @param error        Failure message for WISH_SYNC_FAILED, else NULL.
+ *                     Valid only during the call.
+ * @param userdata     Value passed to wish_sync_resource_package().
+ */
+typedef void (*wish_resource_sync_fn)(
+    wish_client_handle client,
+    const char* name,
+    wish_sync_state state,
+    uint64_t transferred,
+    uint64_t total,
+    const char* error,
+    void* userdata);
+
+/**
+ * @brief Keep a local zip of resources in sync with the session sandbox,
+ *        in the background.
+ *
+ * Equivalent to `wish::client::sync_resource_package()`. The server
+ * remembers which version (modified time and size) of package @p name it
+ * last unpacked; the zip is uploaded and unpacked into @p dest_path only if
+ * it changed. Unpacking adds and overwrites files, never deletes any.
+ *
+ * Returns as soon as the sync has started; @p fn reports progress and
+ * completion. Pending syncs are waited for when the session callback
+ * returns, so none outlives the session.
+ *
+ * @param client          Active session handle.
+ * @param name            Unique package name, e.g. `"acme.game.level1"`:
+ *                        1-128 characters from `[A-Za-z0-9_.-]`, not
+ *                        starting with `.`.
+ * @param local_zip_path  Local zip archive.
+ * @param dest_path       Destination directory, relative to the sandbox;
+ *                        NULL or `""` unpacks into the sandbox root.
+ * @param fn              Progress/completion callback; may be NULL.
+ * @param userdata        Passed through to @p fn.
+ * @return WISH_OK once started; WISH_ERR_NULL for a NULL argument;
+ *         WISH_ERR_EXCEPTION if @p local_zip_path does not exist. Every
+ *         later failure is reported through @p fn as WISH_SYNC_FAILED.
+ */
+WISH_API wish_error wish_sync_resource_package(
+    wish_client_handle client,
+    const char* name,
+    const char* local_zip_path,
+    const char* dest_path,
+    wish_resource_sync_fn fn,
+    void* userdata);
+
+/**
+ * @brief Block until every sync started with wish_sync_resource_package()
+ *        on @p client has finished (its final callback has returned).
+ *
+ * Must not be called from a wish_resource_sync_fn (it would wait for
+ * itself).
+ *
+ * @return WISH_OK, or WISH_ERR_NULL if @p client is NULL.
+ */
+WISH_API wish_error wish_wait_resource_syncs(wish_client_handle client);
+
 /* ── User store ───────────────────────────────────────────────────────────── */
 
 /*
  * A persistent store of named bison objects private to the session's
  * authenticated identity, kept by the server across sessions and restarts
- * (see docs/persistent-store.md). Only identified sessions have one: connect
- * with a "username" field in wish_client_run_with_params()'s connect params
- * (or whatever identity the server's auth module expects). Anonymous
+ * (see docs/persistent-store.md). Only identified sessions have one: by
+ * default a session connects as the logged-in OS user, or pass a "username"
+ * field in wish_client_run_with_params()'s connect params (or whatever
+ * identity the server's auth module expects). Anonymous
  * sessions get WISH_ERR_UNAVAILABLE from every call below. Entry names are
  * 1-256 printable ASCII characters; prefix them with your tool's qualified
  * name (e.g. "bdg.desktop.tail") to avoid clashes.
@@ -781,6 +867,202 @@ WISH_API wish_error wish_settings_describe_category(wish_client_handle client, c
  *         a store error; see wish_last_error()).
  */
 WISH_API wish_error wish_settings_read(wish_client_handle client, const char* setting_json, char** out_json);
+
+/* ── Notifications ────────────────────────────────────────────────────────── */
+
+/**
+ * Toasts shown in a corner of the server's screen (see
+ * docs/server-overlay.md). The server marks each one with the session's
+ * identity, keeps at most 4 per session (posting more drops the oldest),
+ * and removes them when the session ends.
+ */
+
+#define WISH_NOTIFY_INFO 0    /**< Blue "i". */
+#define WISH_NOTIFY_SUCCESS 1 /**< Green check mark. */
+#define WISH_NOTIFY_WARNING 2 /**< Orange "!". */
+#define WISH_NOTIFY_ERROR 3   /**< Red cross. */
+
+/**
+ * @brief Show a notification on the server's screen.
+ *
+ * @param client       Active session handle.
+ * @param title        First line, bold; required (at most 120 bytes kept).
+ * @param body         Text under the title, or NULL (at most 600 bytes).
+ * @param kind         WISH_NOTIFY_INFO / _SUCCESS / _WARNING / _ERROR.
+ * @param keys         Key combination drawn as key caps (e.g. "Ctrl+B"), or NULL.
+ * @param duration_ms  How long it stays; 0 keeps it until dismissed (at
+ *                     most 5 minutes).
+ * @param tag          Replaces this session's notification with the same
+ *                     tag instead of adding one, or NULL.
+ * @param out_id       Output: its id, for wish_notify_dismiss(); may be NULL.
+ * @return WISH_OK; WISH_ERR_UNAVAILABLE when the server shows no
+ *         notifications; WISH_ERR_NULL; WISH_ERR_EXCEPTION (e.g. an empty
+ *         title; see wish_last_error()).
+ */
+WISH_API wish_error wish_notify(
+    wish_client_handle client,
+    const char* title,
+    const char* body,
+    int32_t kind,
+    const char* keys,
+    int32_t duration_ms,
+    const char* tag,
+    uint64_t* out_id);
+
+/**
+ * @brief Remove one of this session's notifications early.
+ * @param client  Active session handle.
+ * @param id      Id from wish_notify().
+ * @return WISH_OK (also when it was already gone); WISH_ERR_UNAVAILABLE;
+ *         WISH_ERR_NULL; WISH_ERR_EXCEPTION.
+ */
+WISH_API wish_error wish_notify_dismiss(wish_client_handle client, uint64_t id);
+
+/* ── Media playback ───────────────────────────────────────────────────────── */
+
+/**
+ * Audio and video played by the server (see docs/media.md). The server
+ * decodes the file, drives its own sound card and shows video frames in
+ * `Video` widgets (`"player": "<name>"`) or `Image` widgets
+ * (`"src": "media://<name>"`); this library only sends commands and links
+ * no media library.
+ *
+ * A file must already be in the session sandbox (uploaded with
+ * wish_upload_file() or wish_sync_resource_package()): absolute paths, `..`
+ * escapes and URLs are refused. A session has at most 8 players.
+ *
+ * Every function blocks until the server answered.
+ */
+
+/** @brief Handle to one player opened by wish_media_open(). */
+typedef struct wish_media_handle_* wish_media_handle;
+
+#define WISH_MEDIA_AUTOPLAY 1 /**< wish_media_open() flag: start playing right away. */
+#define WISH_MEDIA_LOOP 2     /**< wish_media_open() flag: restart at the end. */
+
+#define WISH_MEDIA_STATE_STOPPED 0 /**< At the start, not playing. */
+#define WISH_MEDIA_STATE_PLAYING 1
+#define WISH_MEDIA_STATE_PAUSED 2
+#define WISH_MEDIA_STATE_ENDED 3 /**< Reached the end without looping. */
+#define WISH_MEDIA_STATE_ERROR 4 /**< Decoding failed; see wish_media_get_error(). */
+
+#define WISH_MEDIA_EVENT_STATE 0 /**< The state changed (the `state` argument). */
+#define WISH_MEDIA_EVENT_ENDED 1 /**< Playback reached the end without looping. */
+#define WISH_MEDIA_EVENT_ERROR 2 /**< Decoding failed (the `message` argument). */
+
+/** @brief Snapshot of a player, from wish_media_get_status(). */
+typedef struct wish_media_status {
+  double position;      /**< Seconds. */
+  double duration;      /**< Seconds; 0 when the file doesn't say. */
+  float volume;         /**< 0 .. 1. */
+  int32_t state;        /**< WISH_MEDIA_STATE_*. */
+  int32_t width;        /**< Video width in pixels; 0 without video. */
+  int32_t height;       /**< Video height in pixels; 0 without video. */
+  int32_t has_video;    /**< 1 when the file has video. */
+  int32_t has_audio;    /**< 1 when the file has audio. */
+  int32_t loop;         /**< 1 when it restarts at the end. */
+  int32_t audio_output; /**< 0 when the server has no sound card (silent). */
+} wish_media_status;
+
+/**
+ * @brief Called for each player event (see wish_media_on_event()).
+ *
+ * Runs on the client's event thread; @p message is valid only during the
+ * call. Must not call wish_media_on_event() or wish_media_close() on
+ * @p media (the callback runs under the lock those take).
+ *
+ * @param media     The player.
+ * @param event     WISH_MEDIA_EVENT_*.
+ * @param state     The new WISH_MEDIA_STATE_* (for every event).
+ * @param message   Error text for WISH_MEDIA_EVENT_ERROR, else "".
+ * @param userdata  As passed to wish_media_on_event().
+ */
+typedef void (*wish_media_event_fn)(
+    wish_media_handle media, int32_t event, int32_t state, const char* message, void* userdata);
+
+/**
+ * @brief Whether the server plays media (it was built with FFmpeg).
+ * @param client     Active session handle.
+ * @param out_avail  Output: 1 or 0.
+ * @return WISH_OK; WISH_ERR_NULL.
+ */
+WISH_API wish_error wish_media_available(wish_client_handle client, int* out_avail);
+
+/**
+ * @brief Open a file of the session sandbox as player @p name.
+ *
+ * Opening a name that is already open replaces (closes) that player.
+ *
+ * @param client  Active session handle.
+ * @param name    Name widgets refer to (1-128 bytes).
+ * @param path    Sandbox-relative path of an uploaded file.
+ * @param flags   WISH_MEDIA_AUTOPLAY | WISH_MEDIA_LOOP, or 0.
+ * @param volume  Initial volume, 0 .. 1.
+ * @param out     Output: the player; free it with wish_media_close().
+ * @return WISH_OK; WISH_ERR_UNAVAILABLE when the server plays no media;
+ *         WISH_ERR_NULL; WISH_ERR_EXCEPTION (a refused or missing path, a
+ *         file that isn't playable, too many players; see wish_last_error()).
+ */
+WISH_API wish_error wish_media_open(
+    wish_client_handle client, const char* name, const char* path, int32_t flags, float volume, wish_media_handle* out);
+
+/**
+ * @brief Start or resume; from the end, restart from the beginning.
+ * @return WISH_OK; WISH_ERR_NULL; WISH_ERR_EXCEPTION (closed player, ended
+ *         session; see wish_last_error() of the client).
+ */
+WISH_API wish_error wish_media_play(wish_media_handle media);
+
+/** @brief Pause at the current position. @return As wish_media_play(). */
+WISH_API wish_error wish_media_pause(wish_media_handle media);
+
+/** @brief Pause and rewind to the start. @return As wish_media_play(). */
+WISH_API wish_error wish_media_stop(wish_media_handle media);
+
+/**
+ * @brief Move to @p seconds (clamped to the file), keeping playing/paused.
+ * @return As wish_media_play().
+ */
+WISH_API wish_error wish_media_seek(wish_media_handle media, double seconds);
+
+/** @brief Set the volume, 0 (mute) .. 1. @return As wish_media_play(). */
+WISH_API wish_error wish_media_set_volume(wish_media_handle media, float volume);
+
+/** @brief Whether to restart at the end (0 or 1). @return As wish_media_play(). */
+WISH_API wish_error wish_media_set_loop(wish_media_handle media, int32_t loop);
+
+/**
+ * @brief Read the player's state, position and stream info.
+ * @param media  The player.
+ * @param out    Output.
+ * @return As wish_media_play().
+ */
+WISH_API wish_error wish_media_get_status(wish_media_handle media, wish_media_status* out);
+
+/**
+ * @brief Why the player is in WISH_MEDIA_STATE_ERROR.
+ * @param media     The player.
+ * @param out_text  Output: a string to release with bison_free_string(); "" when
+ *                  there is no error.
+ * @return As wish_media_play().
+ */
+WISH_API wish_error wish_media_get_error(wish_media_handle media, char** out_text);
+
+/**
+ * @brief Receive the player's events in @p fn (replacing any earlier
+ *        callback; NULL stops them). Events raised before this call are not
+ *        replayed (e.g. the "playing" change of WISH_MEDIA_AUTOPLAY).
+ * @return WISH_OK; WISH_ERR_NULL; WISH_ERR_EXCEPTION.
+ */
+WISH_API wish_error wish_media_on_event(wish_media_handle media, wish_media_event_fn fn, void* userdata);
+
+/**
+ * @brief Close the player on the server (stops it, frees the decoder,
+ *        device and texture) and free @p media. Safe after the session
+ *        ended; players left open are freed by wish_client_destroy().
+ * @return WISH_OK; WISH_ERR_NULL.
+ */
+WISH_API wish_error wish_media_close(wish_media_handle media);
 
 /* ── Logging ──────────────────────────────────────────────────────────────── */
 

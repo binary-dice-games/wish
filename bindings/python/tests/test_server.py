@@ -25,8 +25,11 @@ import time
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.dirname(__file__))
 
-from wish import Client, Server
+import _wish_home  # noqa: E402,F401  (before any server starts)
+
+from wish import Client, Server, WishError
 
 
 def _free_port() -> int:
@@ -156,7 +159,7 @@ class TestUserStore(unittest.TestCase):
         self.store_dir = tempfile.mkdtemp(prefix="wish_py_store_")
         self.port = _free_port()
         self.server = Server.tcp("127.0.0.1", self.port)
-        self.server.start(renderer="console", store_dir=self.store_dir)
+        self.server.start(renderer="console", wish_home=self.store_dir)
         time.sleep(0.1)
 
     def tearDown(self):
@@ -177,7 +180,8 @@ class TestUserStore(unittest.TestCase):
                 done.set()
 
         client = Client.tcp("127.0.0.1", self.port)
-        params = {"username": username} if username else None
+        # No username: explicitly anonymous (otherwise the OS user).
+        params = {"username": username} if username else {"anonymous": True}
         t = threading.Thread(target=lambda: client.run(wrapped, params=params), daemon=True)
         t.start()
         self.assertTrue(done.wait(timeout=10))
@@ -284,6 +288,90 @@ class TestUserStore(unittest.TestCase):
         r = self._run(session)
         self.assertFalse(r["has"])
         self.assertEqual(r["code"], _n.WISH_ERR_UNAVAILABLE)
+
+
+class TestNotifications(unittest.TestCase):
+    """Client.notify / dismiss_notification against a real wish_server_dll server."""
+
+    setUp = TestUserStore.setUp
+    tearDown = TestUserStore.tearDown
+    _run = TestUserStore._run
+
+    def test_post_replace_and_dismiss(self):
+        def session(c, r):
+            r["first"] = c.notify("Backup finished", "42 files", kind="success", keys="Ctrl+B", tag="backup")
+            r["again"] = c.notify("Backup finished", "43 files", kind="success", tag="backup", duration=0)
+            c.dismiss_notification(r["first"])
+
+        r = self._run(session, username="alice")
+        self.assertGreater(r["first"], 0)
+        self.assertEqual(r["again"], r["first"])  # same tag: replaced
+
+    def test_anonymous_clients_can_notify(self):
+        r = self._run(lambda c, r: r.update(id=c.notify("hello")))
+        self.assertGreater(r["id"], 0)
+
+    def test_bad_input_is_rejected(self):
+        def session(c, r):
+            with self.assertRaises(ValueError):
+                c.notify("x", kind="loud")
+            with self.assertRaises(WishError):
+                c.notify("")
+
+        self._run(session)
+
+
+
+def _silent_wav(seconds):
+    """16-bit stereo 48 kHz WAV of silence."""
+    import struct
+
+    data = b"\0" * (int(seconds * 48000) * 4)
+    return (
+        b"RIFF" + struct.pack("<I", 36 + len(data)) + b"WAVEfmt "
+        + struct.pack("<IHHIIHH", 16, 1, 2, 48000, 48000 * 4, 4, 16)
+        + b"data" + struct.pack("<I", len(data)) + data
+    )
+
+
+class TestMedia(unittest.TestCase):
+    """Client.open_media / MediaPlayer against a real wish_server_dll server."""
+
+    setUp = TestUserStore.setUp
+    tearDown = TestUserStore.tearDown
+    _run = TestUserStore._run
+
+    def test_open_play_and_hear_the_end(self):
+        def session(c, r):
+            r["has"] = c.has_media()
+            if not r["has"]:
+                return  # a server built without FFmpeg
+            c.upload_file("quiet.wav", _silent_wav(0.3))
+            ended = threading.Event()
+            events = []
+            with c.open_media("quiet", "quiet.wav", volume=0.0) as player:
+                r["name"] = player.name
+                r["status"] = player.status()
+                player.on_event(lambda e, state, msg: (events.append((e, state)), e == "ended" and ended.set()))
+                player.play()
+                r["ended"] = ended.wait(timeout=10)
+                r["events"] = list(events)
+                with self.assertRaises(WishError):
+                    c.open_media("x", "../escape.wav")
+            with self.assertRaises(RuntimeError):
+                player.play()  # closed
+
+        r = self._run(session)
+        if not r["has"]:
+            self.skipTest("server built without media support")
+        self.assertEqual(r["name"], "quiet")
+        self.assertTrue(r["status"].has_audio)
+        self.assertFalse(r["status"].has_video)
+        self.assertEqual(r["status"].state, "stopped")
+        self.assertAlmostEqual(r["status"].duration, 0.3, delta=0.05)
+        self.assertTrue(r["ended"])
+        self.assertIn(("state_changed", "playing"), r["events"])
+        self.assertIn(("ended", "ended"), r["events"])
 
 
 if __name__ == "__main__":

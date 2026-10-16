@@ -6,6 +6,7 @@
  */
 #include "app/wish_cli/host_renderer.hpp"
 
+#include <imgui/imgui_notifications.hpp>
 #include <sdl/sdl3_renderer.hpp>
 #include <ui/ui_elements/ui_elements.hpp>
 #include <web/web_renderer.hpp>
@@ -31,10 +32,96 @@ const ui_element* find_menu_bar_extension(const context& s) {
 } // namespace
 
 template <typename Base>
+void host_renderer<Base>::enable_server_overlay(server_overlay_info info) {
+  if (!info.shutdown)
+    info.shutdown = [this] { this->request_quit(); };
+  if (!info.request_screenshot)
+    info.request_screenshot = [this](std::function<void(std::vector<uint8_t>)> done) {
+      return this->request_screenshot(std::move(done));
+    };
+  info.perf = &perf_;
+  overlay_ = std::make_unique<server_overlay>(std::move(info), this->notifications());
+  // Closing the window asks for confirmation (render_server_frame()).
+  if constexpr (requires(Base& b) { b.set_confirm_close(true); })
+    this->set_confirm_close(true);
+  if (overlay_->has_hotkey()) {
+    notification hint;
+    hint.title = "wish server is running";
+    hint.body = "Press to open the server overlay: clients, settings, logs and more.";
+    hint.keys = overlay_->hotkey();
+    hint.duration = std::chrono::seconds{10};
+    hint.tag = "wish.server.overlay.hint";
+    this->notifications()->post(std::move(hint));
+  }
+}
+
+template <typename Base>
+void host_renderer<Base>::request_server_shutdown() {
+  if (overlay_)
+    overlay_->request_shutdown();
+  else
+    this->request_quit();
+}
+
+template <typename Base>
+void host_renderer<Base>::render_server_overlay(const std::vector<sync_context_ptr>& sessions) {
+  if (overlay_)
+    overlay_->render(sessions);
+  // A screenshot frame shows the clients' windows only.
+  // Toasts stay clear of the overlay's action bar (its Shut down button sits
+  // in the same corner).
+  notifications_visible_ = !(overlay_ && overlay_->capturing()) &&
+      render_notifications(*this->notifications(), notification_corner::bottom_right,
+                           overlay_ ? overlay_->bottom_bar_height() : 0.0f);
+}
+
+template <typename Base>
+void host_renderer<Base>::begin_frame() {
+  frame_start_ = std::chrono::steady_clock::now();
+  Base::begin_frame();
+}
+
+template <typename Base>
+void host_renderer<Base>::end_frame() {
+  Base::end_frame();
+  perf_.record_frame(std::chrono::steady_clock::now() - frame_start_);
+}
+
+template <typename Base>
+void host_renderer<Base>::tick(const std::vector<sync_context_ptr>& sessions) {
+  Base::tick(sessions);
+  const auto now = std::chrono::steady_clock::now();
+  if (perf_.due(now))
+    perf_.close_sample(now, sessions.size(), process_cpu_seconds(), process_memory_bytes());
+}
+
+template <typename Base>
+bool host_renderer<Base>::wants_continuous_redraw() const {
+  return Base::wants_continuous_redraw() || notifications_visible_ ||
+      (overlay_ && (overlay_->is_open() || overlay_->capturing() || overlay_->confirming_shutdown()));
+}
+
+template <typename Base>
+bool host_renderer<Base>::consume_render_request() {
+  const bool requested = Base::consume_render_request();
+  const bool notified = this->notifications()->consume_changed();
+  return requested || notified;
+}
+
+template <typename Base>
 void host_renderer<Base>::render_server_frame(const std::vector<sync_context_ptr>& sessions) {
+  // The overlay's hotkey first, so it toggles whatever the sessions do
+  // with the keyboard this frame.
+  if (overlay_)
+    overlay_->handle_keys();
+  if constexpr (requires(Base& b) { b.consume_close_request(); }) {
+    if (this->consume_close_request())
+      request_server_shutdown();
+  }
+
   // A DesktopShell session turns the host into a desktop; its chrome
   // replaces the menu bar host window below entirely.
-  if (render_desktop_shell(*this, sessions, desktop_state_, [this] { this->request_quit(); }))
+  if (render_desktop_shell(*this, sessions, desktop_state_, [this] { request_server_shutdown(); }))
     return;
 
   const ImGuiViewport* vp = ImGui::GetMainViewport();
@@ -60,8 +147,10 @@ void host_renderer<Base>::render_server_frame(const std::vector<sync_context_ptr
 
   if (ImGui::BeginMenuBar()) {
     if (ImGui::BeginMenu("Server")) {
+      if (overlay_ && ImGui::MenuItem("Overlay", overlay_->hotkey().c_str()))
+        overlay_->set_open(true);
       if (ImGui::MenuItem("Quit", "Alt+F4"))
-        this->request_quit();
+        request_server_shutdown();
       ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("View")) {

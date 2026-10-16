@@ -8,7 +8,7 @@
  *
  *   1. the command line;
  *   2. the `WISH_<FLAG>` environment variable (see env_flags.hpp);
- *   3. the mode's entry in the server store (`<store_dir>/server_store.bison`,
+ *   3. the mode's entry in the server store (`<wish_home>/server/store.bison`,
  *      entry `wish.cli.server` or `wish.cli.standalone`);
  *   4. the default hardcoded in the flag's `DEFINE_*`.
  *
@@ -36,7 +36,7 @@ inline constexpr const char* kStandaloneConfigEntry = "wish.cli.standalone";
  * @brief Names of the registered flags that can be saved: every flag known
  *        to gflags except
  *        - @p excluded_flags (the mode's own exclusions);
- *        - `--save_defaults`, `--clear_defaults` and `--store_dir`;
+ *        - `--save_defaults`, `--clear_defaults` and `--wish_home`;
  *        - gflags' built-in flags (`--help`, `--flagfile`, ...);
  *        - secrets: flags named `*password` or `*_pem`.
  * @return Names in gflags' order (by defining file, then name).
@@ -96,7 +96,7 @@ void describe_config_flags(
     const std::string& section);
 
 /**
- * @brief CLI helper: opens the server store under @p store_dir, handles
+ * @brief CLI helper: opens the server store under @p home_root, handles
  *        `--clear_defaults` and `--save_defaults`, then applies the saved
  *        defaults (see `apply_config_store_defaults()`).
  *
@@ -104,7 +104,7 @@ void describe_config_flags(
  * instance afterwards. Never throws: a store that can't be written prints a
  * warning prefixed with @p log_prefix and the run continues.
  *
- * @param store_dir    `--store_dir`; empty selects `default_store_dir()`.
+ * @param home_root    `--wish_home`; empty selects `wish_home::default_root()`.
  * @param entry_name   `kServerConfigEntry` or `kStandaloneConfigEntry`.
  * @param excluded_flags  The mode's flags that are never saved or loaded.
  * @param log_prefix   Message prefix, e.g. `"[wish server]"`.
@@ -112,7 +112,7 @@ void describe_config_flags(
  * Also records the flags' settings metadata (describe_config_flags()).
  */
 void load_cli_config(
-    const std::string& store_dir,
+    const std::string& home_root,
     const std::string& entry_name,
     const std::vector<std::string>& excluded_flags,
     const std::string& log_prefix);

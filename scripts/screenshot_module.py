@@ -24,8 +24,10 @@ import argparse
 import glob
 import os
 import socket
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -111,7 +113,8 @@ def main():
                     help="extra seconds before the screenshot, for async client work (uploads, previews)")
     ap.add_argument("--dump-tree", action="store_true", help="print top-level widget paths")
     ap.add_argument("--username", default="",
-                    help="identity the client sends (gives it a persistent user store, e.g. for curl)")
+                    help="identity the client sends (gives it a persistent user store, e.g. for curl; "
+                         "default: anonymous, so the OS user never shows up in a screenshot)")
     ap.add_argument("--lang", default="", help="UI language the client requests, e.g. es (see docs/i18n.md)")
     args = ap.parse_args()
 
@@ -119,12 +122,22 @@ def main():
     from wish.automation import AutomationClient
 
     rmi_port = _free_port()
-    server = [args.wish, "server", "--transport", "tcp", "--port", str(rmi_port), "--renderer", "web"]
+    # A scratch wish home: the session's profile and sandbox never touch ~/.wish.
+    home = tempfile.mkdtemp(prefix="wish_screenshot_home_")
+    server = [args.wish, "server", "--transport", "tcp", "--port", str(rmi_port), "--renderer", "web",
+              "--wish_home", home]
+    try:
+        _shoot(args, server, rmi_port, AutomationClient)
+    finally:
+        shutil.rmtree(home, ignore_errors=True)
+
+
+def _shoot(args, server, rmi_port, AutomationClient):
     with AutomationClient.launch(server_cmd=server) as ui:
         ui._page.set_viewport_size({"width": args.width, "height": args.height})
         client = subprocess.Popen([args.wish, "client", "--transport", "tcp", "--host", "127.0.0.1",
                                    "--port", str(rmi_port), "--run", args.run]
-                                  + (["--username", args.username] if args.username else [])
+                                  + (["--username", args.username] if args.username else ["--anonymous"])
                                   + (["--lang", args.lang] if args.lang else [])
                                   + (["--"] + args.arg if args.arg else []))
         try:

@@ -9,8 +9,10 @@
 #include "src/bison/bison.hpp"
 #include "src/client/app_registry.hpp"
 #include "src/client/desktop_endpoint.hpp"
+#include "src/client/style_rpc.hpp"
 #include "src/client/user_store_rpc.hpp"
-#include "src/context/store_dir.hpp"
+#include "src/context/os_user.hpp"
+#include "src/context/wish_home.hpp"
 #include "src/rmi/shared/constants.hpp"
 #include "src/term/terminal.hpp"
 #include "src/ui/ui_descriptor.hpp"
@@ -34,6 +36,13 @@ DECLARE_bool(debugger);
 // Shared with wish client's --timeout: both express "per-request timeout to
 // the remote peer" (there, the wish server; here, the upstream server).
 DECLARE_int32(timeout);
+
+// Defined in config_flags.cpp for wish-cli; wish-desktop has no server flags.
+#ifdef WISH_CLI_BUILD
+DECLARE_string(wish_home);
+#else
+DEFINE_string(wish_home, "", "Root of the files wish keeps for its users (see src/context/DESIGN.md); empty: ~/.wish");
+#endif
 
 // ── Downstream (server side) flags ─────────────────────────────────────────────
 DEFINE_string(downstream_transport, "tcp", "Downstream transport to use: tcp, pipe, tls, or term");
@@ -81,7 +90,13 @@ DEFINE_string(
     config,
     "",
     "Desktop configuration file (YAML or JSON): the Start menu and other desktop settings; "
-    "created with the defaults if missing (default: ~/.wish/desktop/desktop.yaml)");
+    "created with the defaults if missing (default: <wish_home>/users/<user>/desktop/desktop.yaml)");
+DEFINE_bool(
+    with_server,
+    false,
+    "Run the wish server in this process, connected through an in-memory transport, instead of "
+    "connecting to a separate one (the --upstream_* transport flags are ignored; the wish server "
+    "flags such as --renderer apply). Combined wish binary only.");
 
 namespace bdg::wish {
 
@@ -115,12 +130,11 @@ constexpr const char* kSettingsEntry = "wish.desktop";
 // private app directory, see src/auth/DESIGN.md).
 constexpr const char* kWallpaperDir = "private/apps/wish.desktop";
 
-std::string os_user_name() {
-  for (const char* var : {"USER", "USERNAME", "LOGNAME"}) {
-    if (const char* v = std::getenv(var); v && *v)
-      return v;
-  }
-  return {};
+/// The default config file: in @p user's profile, or -- for a name that
+/// can't be a profile (see normalize_identity()) -- directly in the home.
+std::filesystem::path desktop_config_path(const wish_home& home, const std::string& user) {
+  auto file = home.user_desktop_config(user);
+  return file.empty() ? home.root() / "desktop.yaml" : file;
 }
 
 /// A wildcard bind address isn't connectable; children dial loopback.
@@ -331,6 +345,14 @@ void wish_desktop::build_chrome() {
     return;
 
   try {
+    // The themes the server has: the settings' choices and toggle_theme's
+    // cycle.
+    try {
+      style_proxy_ = upstream().instantiate("wish"_key, "__WishStyle"_key).get();
+      *themes_.wlock() = detail::list_themes_sync(*style_proxy_);
+    } catch (...) {
+      style_proxy_.reset();
+    }
     // Saved settings (identified upstream sessions only).
     try {
       user_store_proxy_ = upstream().instantiate("wish"_key, "__WishUserStore"_key).get();
@@ -346,7 +368,10 @@ void wish_desktop::build_chrome() {
         theme.description = "Theme of the desktop and the apps on it; the tray's theme button switches it too.";
         theme.category = "desktop";
         theme.type = settings::setting_type::choice;
-        theme.options = {{"light", "Light"}, {"dark", "Dark"}, {"wish", "Wish"}, {"classic", "Classic"}};
+        for (const auto& t : *themes_.rlock())
+          theme.options.push_back({t.name, t.label});
+        if (theme.options.empty()) // an older server: the built-in ones
+          theme.options = {{"wish", "Wish"}, {"light", "Light"}, {"dark", "Dark"}, {"classic", "Classic"}};
         theme.default_value = std::string{"light"};
         theme.restart = true;
         detail::describe_setting_sync(*user_store_proxy_, theme);
@@ -390,11 +415,6 @@ void wish_desktop::build_chrome() {
     }
 
     // Theme.
-    try {
-      style_proxy_ = upstream().instantiate("wish"_key, "__WishStyle"_key).get();
-    } catch (...) {
-      style_proxy_.reset();
-    }
     if (!saved.theme.empty())
       apply_theme(saved.theme);
 
@@ -761,7 +781,7 @@ dynamic wish_desktop::run_action(const std::string& action, const dynamic& args)
   } else if (action == "set_theme" || action == "toggle_theme") {
     std::string preset = args.get_as<std::string>("preset"_key, std::string{});
     if (action == "toggle_theme")
-      preset = state_.rlock()->settings.theme == "dark" ? "light" : "dark";
+      preset = next_theme_name(state_.rlock()->settings.theme);
     if (preset.empty())
       throw std::runtime_error("set_theme: missing \"preset\"");
     state_.wlock()->settings.theme = preset;
@@ -788,6 +808,17 @@ dynamic wish_desktop::run_action(const std::string& action, const dynamic& args)
     throw std::runtime_error("unknown desktop action '" + action + "'");
   }
   return result;
+}
+
+std::string wish_desktop::next_theme_name(const std::string& current) const {
+  const auto themes = *themes_.rlock();
+  if (themes.empty()) // an older server: the two built-in ones that always exist
+    return current == "dark" ? "light" : "dark";
+  for (size_t i = 0; i < themes.size(); ++i) {
+    if (themes[i].name == current)
+      return themes[(i + 1) % themes.size()].name;
+  }
+  return themes.front().name;
 }
 
 void wish_desktop::apply_theme(const std::string& preset) {
@@ -1075,7 +1106,11 @@ int wish_desktop_app::run(int argc, char** argv) {
   set_env_var("WISH_PORT", std::to_string(FLAGS_downstream_port));
   set_env_var("WISH_NAME", FLAGS_downstream_name);
 
-  return bison::app::bridge_app::run(argc, argv);
+  int rc = bison::app::bridge_app::run(argc, argv);
+  // The bridge, the server's only client, is gone: stop the server.
+  server_.reset();
+  server_transport_.reset();
+  return rc;
 }
 
 std::string wish_desktop_app::bridge_description() const {
@@ -1111,13 +1146,14 @@ std::unique_ptr<bison::rmi::bridge> wish_desktop_app::make_bridge(
         {"WISH_PORT", std::to_string(FLAGS_downstream_port)},
         {"WISH_NAME", FLAGS_downstream_name},
     });
-    br->set_log_dir(std::filesystem::path("wish_logs") / "desktop");
+    br->set_log_dir(wish_home{FLAGS_wish_home}.logs_dir() / "desktop");
   }
   if (!FLAGS_wallpaper.empty())
     br->set_wallpaper(FLAGS_wallpaper);
-  br->set_config_file(
-      FLAGS_config.empty() ? default_store_dir() / "desktop" / "desktop.yaml" : std::filesystem::path(FLAGS_config));
-  br->set_user(FLAGS_upstream_username.empty() ? os_user_name() : FLAGS_upstream_username);
+  const std::string user = FLAGS_upstream_username.empty() ? os_user_name() : FLAGS_upstream_username;
+  br->set_config_file(FLAGS_config.empty() ? desktop_config_path(wish_home{FLAGS_wish_home}, user)
+                                           : std::filesystem::path(FLAGS_config));
+  br->set_user(user);
 
   desktop_ = br.get();
   return br;
@@ -1136,6 +1172,16 @@ void wish_desktop_app::on_upstream_connect_params(bison::dynamic& params) const 
     params["username"_key] = user;
 }
 
+std::unique_ptr<bison::rmi::transport::client_transport_iface> wish_desktop_app::make_upstream_transport() {
+  if (!FLAGS_with_server)
+    return nullptr;
+  if (!server_factory_)
+    throw std::runtime_error("--with_server is only available in the combined wish binary");
+  server_transport_ = std::make_unique<rmi::transport::memory_server_transport>();
+  server_ = server_factory_(*server_transport_);
+  return std::make_unique<rmi::transport::memory_client_transport>(server_transport_->connect());
+}
+
 void wish_desktop_app::wait_for_shutdown() {
   if (!desktop_) {
     bison::app::bridge_app::wait_for_shutdown();
@@ -1145,6 +1191,9 @@ void wish_desktop_app::wait_for_shutdown() {
   using namespace std::chrono_literals;
   while (!desktop_->wait_for_quit_for(100ms)) {
     if (active_term_ && active_term_->has_exited())
+      break;
+    // --with_server: its window was closed, or "Shut down server" was used.
+    if (server_ && server_->should_quit())
       break;
     // Without its server the desktop can show nothing, yet it would keep
     // the fixed endpoint, refusing a new desktop and leaving the clients

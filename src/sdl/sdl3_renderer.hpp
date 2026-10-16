@@ -13,20 +13,20 @@
 #ifdef WISH_AUTOMATION_ENABLED
 #include <automation/automation_backend.hpp>
 #include <automation/automation_query.hpp>
-#include "src/bison/bison_sync.hpp"
 #endif
+#include "src/bison/bison_sync.hpp"
 
 #include <atomic>
 #include <chrono>
+#include <deque>
 #include <filesystem>
 #include <map>
 #include <set>
 #include <string>
+#include <vector>
 
 #ifdef WISH_AUTOMATION_ENABLED
-#include <deque>
 #include <future>
-#include <vector>
 #endif
 
 namespace bdg::wish {
@@ -41,8 +41,11 @@ namespace bdg::wish {
  *   N × begin_frame / render_node / end_frame
  *   teardown()      — shuts down ImGui backends, destroys SDL objects
  *
- * The window close event sets the `should_quit()` flag, which causes
- * `wish::server::render_loop` to exit gracefully.
+ * Closing the window (its close button, Alt+F4) sets the `should_quit()`
+ * flag, which causes `wish::server::render_loop` to exit gracefully --
+ * unless `set_confirm_close(true)`, in which case it is only recorded for
+ * `consume_close_request()`, so the host can ask the user first.
+ * `SDL_EVENT_QUIT` (Ctrl+C, an OS-level quit) always quits.
  *
  * Texture loading: BMP files are loaded via `SDL_LoadBMP`; PNG would require
  * SDL3_image (out of scope).  Loaded textures are cached by filename and
@@ -98,8 +101,21 @@ class sdl3_renderer : public imgui_renderer
   /// @brief Returns true once the user closes the window or quit is requested.
   bool should_quit() const override;
 
+  /// @brief Reads back the next frame before it is presented (see
+  ///        renderer::request_screenshot()); @p done runs on the render
+  ///        thread. Never false once the renderer is set up.
+  bool request_screenshot(screenshot_callback done) override;
+
   /// @brief Programmatically request shutdown (e.g. from a menu action).
   void request_quit();
+
+  /// @brief When true, closing the window no longer quits; it is reported
+  ///        by consume_close_request() instead. Safe from any thread.
+  void set_confirm_close(bool confirm);
+
+  /// @brief Whether the window was asked to close (with set_confirm_close())
+  ///        since the last call; clears the request.
+  bool consume_close_request();
 
   // ── texture loading ───────────────────────────────────────────────────────
 
@@ -161,6 +177,17 @@ class sdl3_renderer : public imgui_renderer
    * backbuffer everything else eventually lands on.
    */
   void flush_draw_list(ImDrawList& draw_list, int w, int h) override;
+
+  /// request_screenshot() (any thread; capture_screenshot() for
+  /// automation) pushes here; drained on the render thread by end_frame(),
+  /// right after draw data is submitted to sdl_renderer_ but before
+  /// SDL_RenderPresent() -- the last point at which SDL_RenderReadPixels()
+  /// still sees this frame's pixels.
+  bison::synchronized<std::deque<screenshot_callback>> pending_screenshots_;
+
+  /// @brief Read back the currently-rendered frame from `sdl_renderer_` and
+  ///        PNG-encode it. Render-thread only; called from `end_frame()`.
+  std::vector<uint8_t> capture_frame_png();
 
 #ifdef WISH_AUTOMATION_ENABLED
   // ── automation ────────────────────────────────────────────────────────────
@@ -236,6 +263,8 @@ class sdl3_renderer : public imgui_renderer
 
   SDL_Renderer* sdl_renderer_ = nullptr;
   std::atomic<bool> quit_{false};
+  std::atomic<bool> confirm_close_{false};
+  std::atomic<bool> close_requested_{false};
 
   // Backing storage for ImGuiIO::IniFilename -- ImGui keeps the pointer we
   // assign it, so the path string must outlive the ImGui context.
@@ -315,16 +344,6 @@ class sdl3_renderer : public imgui_renderer
   /// query_tree() (called from an RMI dispatch thread) pushes here; drained
   /// on the render thread by service_automation_queries().
   bison::synchronized<std::deque<pending_tree_query>> pending_tree_queries_;
-
-  /// capture_screenshot() (called from an RMI dispatch thread) pushes here;
-  /// drained on the render thread by end_frame(), right after draw data is
-  /// submitted to sdl_renderer_ but before SDL_RenderPresent() -- the last
-  /// point at which SDL_RenderReadPixels() still sees this frame's pixels.
-  bison::synchronized<std::deque<std::promise<std::vector<uint8_t>>>> pending_screenshots_;
-
-  /// @brief Read back the currently-rendered frame from `sdl_renderer_` and
-  ///        PNG-encode it. Render-thread only; called from `end_frame()`.
-  std::vector<uint8_t> capture_frame_png();
 
   /// inject_text() (called from an RMI dispatch thread) pushes here; drained
   /// on the render thread at the top of begin_frame(), before ImGui::NewFrame(),

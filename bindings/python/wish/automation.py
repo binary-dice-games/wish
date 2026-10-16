@@ -119,7 +119,11 @@ class AutomationClient:
           subprocess. If the command doesn't already include ``--web_port``,
           a free port is chosen and appended automatically, and the client
           waits for the server to start accepting connections on it before
-          navigating.
+          navigating. Unless the command sets ``--overlay_hotkey``,
+          ``--overlay_hotkey=`` is appended too: no server overlay and no
+          startup notification, whose toast would otherwise cover (and take
+          the clicks of) the bottom-right corner for its first seconds. Pass
+          ``--overlay_hotkey=Shift+F1`` to drive the overlay.
         - **url**: attach to an already-running server instead of launching
           one (e.g. a server an agent started manually, or in another
           terminal, during interactive use).
@@ -146,6 +150,8 @@ class AutomationClient:
                 cmd += ["--web_port", str(port)]
             else:
                 port = int(cmd[cmd.index("--web_port") + 1])
+            if "server" in cmd and not any(a.startswith("--overlay_hotkey") for a in cmd):
+                cmd.append("--overlay_hotkey=")
             process = subprocess.Popen(cmd)
             url = f"http://127.0.0.1:{port}"
             try:

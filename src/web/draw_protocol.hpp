@@ -51,6 +51,9 @@ enum class web_msg_type : uint8_t {
                          ///< "Clipboard bridging" in src/web/DESIGN.md).
   clipboard_write = 0x14, ///< Server -> browser: ImGui copied/cut text;
                           ///< browser should write it to the OS clipboard.
+  screenshot_request = 0x15, ///< Server -> browser: capture the next drawn
+                             ///< frame and send it back (no payload).
+  screenshot_data = 0x16, ///< Browser -> server: that capture, as PNG bytes.
 #ifdef WISH_AUTOMATION_ENABLED
   query_tree = 0x20,    ///< Browser -> server: request a tree/hit-test snapshot.
   tree_snapshot = 0x21, ///< Server -> browser: JSON tree/hit-test snapshot.
@@ -243,6 +246,20 @@ std::optional<std::string> decode_clipboard_text_message(std::span<const std::by
  *              callback.
  */
 std::vector<std::byte> encode_clipboard_write(const std::string& text);
+
+/**
+ * @brief Encode a SCREENSHOT_REQUEST message (empty payload): the browser
+ *        captures the canvas right after drawing its next frame and replies
+ *        with SCREENSHOT_DATA. See `web_renderer::request_screenshot()`.
+ */
+std::vector<std::byte> encode_screenshot_request();
+
+/**
+ * @brief Decode a browser -> server SCREENSHOT_DATA message.
+ * @return The PNG bytes, or `std::nullopt` if @p message isn't a
+ *         SCREENSHOT_DATA message.
+ */
+std::optional<std::vector<uint8_t>> decode_screenshot_data_message(std::span<const std::byte> message);
 
 #ifdef WISH_AUTOMATION_ENABLED
 /**

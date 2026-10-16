@@ -32,6 +32,14 @@ sudo apt-get install -y \
 
 SDL3 is fetched and built from source by CMake, so no `libsdl3-dev` package is required.
 
+For [media playback](#media-playback-ffmpeg), also install FFmpeg's
+development libraries:
+
+```sh
+sudo apt-get install -y \
+    libavformat-dev libavcodec-dev libavutil-dev libswscale-dev libswresample-dev pkg-config
+```
+
 ### MSYS2 (Windows host)
 
 Install [MSYS2](https://www.msys2.org/), then from an **MSYS2 MSYS** shell
@@ -64,6 +72,30 @@ No `libuv` package install is needed — on native Windows (detected via
 `WIN32 AND NOT MSYS AND NOT CYGWIN` in `extern/bison/CMakeLists.txt`), bison
 builds its bundled `extern/libuv` from source instead of looking for a
 system/pkg-config copy, unlike the Linux/MSYS2 path above.
+
+### Media playback (FFmpeg)
+
+Server-side audio/video playback ([docs/media.md](media.md)) needs FFmpeg
+5.1 or newer: libavformat, libavcodec, libavutil, libswscale and
+libswresample. Unlike the other dependencies, FFmpeg isn't a submodule,
+because it builds with its own `configure` script rather than CMake.
+Install it from the platform's package manager:
+
+| Platform | Install |
+|----------|---------|
+| Debian/Ubuntu | `sudo apt-get install libavformat-dev libavcodec-dev libavutil-dev libswscale-dev libswresample-dev pkg-config` |
+| Fedora | `sudo dnf install ffmpeg-free-devel pkgconf` |
+| macOS (Homebrew) | `brew install ffmpeg pkg-config` |
+| MSYS2 | `pacman -S --needed mingw-w64-x86_64-ffmpeg` |
+| Native Windows (MSVC) | `vcpkg install ffmpeg[avcodec,avformat,swscale,swresample]:x64-windows`, or unpack an LGPL *shared* build (e.g. github.com/BtbN/FFmpeg-Builds `*-lgpl-shared`), then configure with `-DWISH_FFMPEG_ROOT=<dir>` (the directory with `include/` and `lib/`) |
+
+`cmake/FindFFMPEG.cmake` uses pkg-config when it is available and falls
+back to `FFMPEG_ROOT`/`WISH_FFMPEG_ROOT`. Configure prints
+`wish: media playback ON (libavformat <version>)`, or `OFF` with the reason.
+A build without FFmpeg still works: its clients report `has_media() == false`.
+The client libraries never link FFmpeg. The audio output (miniaudio,
+`extern/miniaudio`) is header-only and loads the platform's audio API at
+runtime, so it adds no build-time packages.
 
 ### Android (NDK)
 
@@ -103,9 +135,10 @@ cmake -S . -B build
 | `WISH_ENABLE_SDL3` | `ON` | Build the SDL3 windowed renderer, the wish server, and the calculator/demo examples. |
 | `WISH_ENABLE_WEB` | `OFF` | Build the web renderer (`--renderer web`): a browser-based backend over HTTP + WebSocket, using civetweb and a first-party binary draw-data protocol (no OpenGL/window system required). Requires no additional system packages beyond what's already needed (SSL is compiled out, so no OpenSSL dependency). Can be combined with `WISH_ENABLE_SDL3` in the same binary; `WISH_ENABLE_SDL3=OFF -DWISH_ENABLE_WEB=ON` builds `wish server`/`wish-server` with no windowing/GPU dependency at all. |
 | `WISH_ENABLE_AUTOMATION` | `OFF` | Build the automation query API: a widget-tree/hit-test query protocol that lets an AI agent (or a pytest-style e2e suite) introspect and drive a running wish UI. On the web renderer this adds a Playwright-driven headless-browser path (screenshot/input control it already gets for free, plus two new WebSocket message types). On the SDL3 renderer this adds a native path built directly into the wish C ABI (no browser). Requires `WISH_ENABLE_WEB=ON` and/or `WISH_ENABLE_SDL3=ON` (configure-time error otherwise). See [src/automation/DESIGN.md](../src/automation/DESIGN.md) and `CLAUDE.md`'s "Automation" section. |
+| `WISH_ENABLE_MEDIA` | `ON` | Server-side audio/video playback ([docs/media.md](media.md)): FFmpeg decoding, miniaudio output, the `Video` widget's frames. Needs FFmpeg's development libraries (see [Media playback](#media-playback-ffmpeg)); without them it is turned off at configure time with a message. |
 | `WISH_BUILD_SHARED` | `ON` | Build `wish_client` as a shared library with a C ABI (`wish_client.dll` on MSYS2/native Windows / `libwish_client.so` on Linux). |
 | `WISH_BUILD_TESTS` | `ON` | Build and register the GoogleTest suite. |
-| `WISH_COLLECTION_BDG_DESKTOP` | `ON` | Include every module in `modules/bdg/desktop/` (bc, tail, nano, pix, top, mc, zip, du) — see below. **Linux and native Windows only**: `top`'s process-control/process-info backends are `*_linux.cpp` / `*_win.cpp`, so a macOS build must set this `OFF`. |
+| `WISH_COLLECTION_BDG_DESKTOP` | `ON` | Include every module in `modules/bdg/desktop/` (bc, tail, nano, pix, top, mc, zip, du, find, conf, mpv) — see below. **Linux and native Windows only**: `top`'s process-control/process-info backends are `*_linux.cpp` / `*_win.cpp`, so a macOS build must set this `OFF`. |
 | `WISH_MODULE_BDG_DESKTOP_BC` | `ON`¹ | Include the bc form (server; a calculator with standard, scientific and programmer layouts) and its self-registering reference client runner. |
 | `WISH_MODULE_BDG_DESKTOP_TAIL` | `ON`¹ | Include the tail form (server) and its self-registering reference client runner — a `tail`-like log viewer (`wish client --run=tail -- [-f] [-n N] FILE...`). |
 | `WISH_MODULE_BDG_DESKTOP_NANO` | `ON`¹ | Include the nano form (server; a multi-file text editor) and its self-registering reference client runner. |
@@ -115,6 +148,7 @@ cmake -S . -B build
 | `WISH_MODULE_BDG_DESKTOP_ZIP` | `ON`¹ | Include the zip form (server) and its self-registering reference client runner (client-side compress/extract/list-contents via miniz). |
 | `WISH_MODULE_BDG_DESKTOP_DU` | `ON`¹ | Include the du form (server) and its self-registering reference client runner — a disk usage analyzer with a treemap (`wish client --run=du -- [FOLDER]`); the client scans its own local filesystem. |
 | `WISH_MODULE_BDG_DESKTOP_FIND` | `ON`¹ | Include the find form (server) and its self-registering reference client runner — instant file search in the spirit of FSearch (`wish client --run=find -- [FOLDER...]`); the client indexes and searches its own local filesystem. |
+| `WISH_MODULE_BDG_DESKTOP_MPV` | `ON`¹ | Include the Mpv form (server) and its self-registering reference client runner — a media player that uploads the client's video/audio files to the sandbox and plays them on the server (`wish client --run=mpv -- [FOLDER]`); plays only on a server built with media support (`WISH_ENABLE_MEDIA`). |
 | `WISH_COLLECTION_BDG_DEV` | `OFF` | Include every module in `modules/bdg/dev/` (editor, docker, kubectl, helm, pip, pkg, curl, sq, nymph, git) — see below. |
 | `WISH_MODULE_BDG_DEV_EDITOR` | `OFF` | Include the Editor form (server) and its self-registering reference client runner — a live JSON UI mock editor (`wish client --run=editor -- path/to/ui.json`). |
 | `WISH_MODULE_BDG_DEV_DOCKER` | `OFF` | Include the DockerFrontend form (server) and its self-registering reference client runner — a Docker Desktop-style GUI that shells out to the local `docker` binary (`wish client --run=docker`). |
@@ -262,7 +296,7 @@ the example app on an emulator.
 ## Running the wish server
 
 `wish server` (or the standalone `wish-server` binary, equivalent flags, no
-subcommand) opens an SDL3 window, or — with `--renderer web` (the default) —
+subcommand) opens an SDL3 window (the default), or — with `--renderer web` —
 a browser endpoint, and renders UI pushed by connected clients over the
 transport selected at launch.
 

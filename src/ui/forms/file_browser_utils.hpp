@@ -93,4 +93,16 @@ double parse_display_size(const std::string& text);
 /// @return true if the file manager was successfully launched.
 bool open_in_host_explorer(const std::filesystem::path& path);
 
+/// @brief Opens @p target -- a file, a directory or an `http(s)://` URL --
+/// with the host OS's default handler (ShellExecute "open" on Windows,
+/// xdg-open on Linux/MSYS2, falling back to the WSL host's explorer.exe
+/// under WSL), e.g. a log file in a text editor or a URL in the browser.
+///
+/// Server-side only, like open_in_host_explorer(): never pass untrusted
+/// client input, since this launches whatever the OS associates with it.
+/// Blocks until the launcher returns.
+///
+/// @return true if the handler was successfully launched.
+bool open_in_host_shell(const std::string& target);
+
 } // namespace bdg::wish

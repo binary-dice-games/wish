@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Media playback (see [docs/media.md](docs/media.md)): clients play audio and video files from their sandbox on the server, which decodes them with FFmpeg and plays the sound with miniaudio; clients link no media library. `open_media()` / `has_media()` on `wish::client`, `wish::standalone` and `wish_app_host` return a `wish::media_player` (`play`, `pause`, `stop`, `seek`, `set_volume`, `set_loop`, `status`, `close`; `state_changed` / `ended` / `error` events). C ABI `wish_media_available()` / `wish_media_open()` / `wish_media_*` on a `wish_media_handle`; `open_media` / `OpenMedia` / `openMedia` and a `MediaPlayer` in the C++, Python, C#, Rust, Go and Java bindings.
+- `bdg/desktop/mpv` module, **Media Player** (`wish client --run=mpv -- [FOLDER]`): lists the client's local media files, uploads them to the sandbox's `media/` folder (double-click to upload and play), and plays the sandbox's library with a video view, seek bar, play/pause, stop, loop and volume.
+- `Video` widget showing a media player's frames (`player`, `width`, `height`, `keep_aspect`, `tint`; emits `clicked`), and `Image.src = "media://<player>"`.
+- `WISH_ENABLE_MEDIA` CMake option (on by default; turned off at configure time when FFmpeg's development libraries are missing).
+- `renderer::create_dynamic_texture()`: textures whose pixels the server rewrites every frame, on the SDL3 and web renderers.
+
+- Resource package sync: `sync_resource_package(name, zip, dest_path, on_progress, on_done)` on `wish::client`, `wish::standalone` and `wish_app_host` uploads a zip and unpacks it into the sandbox in the background, only when the local zip changed since the server last unpacked package `name`. C ABI `wish_sync_resource_package()` / `wish_wait_resource_syncs()`; `sync_resource_package` / `SyncResourcePackage` / `syncResourcePackage` in the C++, Python, C#, Rust, Go and Java bindings.
+- `file_service::unpack()` with an empty `dest` extracts into the sandbox root.
+- Server overlay (see [docs/server-overlay.md](docs/server-overlay.md)): Shift+F1 (new `--overlay_hotkey` flag; also **Server → Overlay**) opens a Steam-like full-screen overlay over every app on `wish server`, with an overview of the server and the local machine, the connected clients (each with an **Open** button for its sandbox folder), a settings editor for the server store and each user store, the live server log, links to the project and its documentation, and buttons to open the server log and its folder and to shut the server down. A notification at startup shows the key.
+- Toast notifications: `wish::notification_center` (`renderer::notifications()`, `context::notifications`) lets server-side code post info/success/warning/error toasts, drawn in a corner of the server's screen.
+- Apps post notifications too: `notify()` / `dismiss_notification()` / `has_notifications()` on `wish::client`, `wish::standalone` and `wish_app_host`; C ABI `wish_notify()` / `wish_notify_dismiss()` (`WISH_NOTIFY_*` kinds); `notify` / `Notify` / `showNotification` in the C++, Python, C#, Rust, Go and Java bindings. Each shows the sender's identity; at most 4 per session.
+- Server overlay **Performance** page: two minutes of frame time, frames drawn, CPU, memory and clients, and Start/Stop recording of a Perfetto trace when the server runs with `--profiling`.
+- Every registered theme everywhere a theme is picked: the desktop tray's theme button opens a menu of all of them, `toggle_theme` cycles through all of them, and the server overlay gets a **Theme** picker (its own look, or any theme; saved as `wish.server.overlay.theme`). The Settings choices for `--theme` and the desktop theme list them too. `registered_themes()` / `find_theme_info()` (theme catalog, `style_service.hpp`), an optional `label` for `register_theme()`, the `__WishStyle.themes` RMI method and `client::list_themes()` / `standalone::list_themes()`.
+- Server overlay **Screenshot** button: saves the clients' windows (without the overlay) as a PNG in `--screenshot_dir` (default `~/.wish/screenshots`); works with the SDL3 and the web renderer. `renderer::request_screenshot()`.
+- `wish desktop --with_server`: runs the wish server in the desktop's own process, connected through the in-memory transport, so a single command starts both (`wish` binary only; the `wish server` flags such as `--renderer` apply).
 - `wish desktop`: an app's main window has Windows-style minimize, maximize/restore and close buttons at the top right of its title bar (double-click the title to maximize), and a border with a shadow that sets it apart from overlapping windows.
 - "Reset layout" puts an app's panels back in their default arrangement: from the app window's title-bar menu (right-click the title; it also has Maximize/Restore, Minimize and Close) or its taskbar button on `wish desktop`, or by changing the new `DockSpaceViewport.layout_reset_request` field.
 - `DockSpaceViewport.closable`: a close button on the app frame that emits `closed` (also offered as "Close window" on the desktop taskbar); `dock::viewport()` frames are closable.
@@ -117,6 +132,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Reconnecting to a persistent sandbox no longer logs a "failed to extract" error for every built-in resource (they were read-only from the previous connection); unchanged files are kept and changed ones replaced.
+- A hidden child of a `HorizontalLayout` no longer leaves a gap, and a hidden first child no longer takes the rest of the row out of view.
 - Opening or closing an instance of a tool no longer detaches the panels of another open instance of the same tool: an instance's window names no longer change while it is open (they depended on the order of random object ids). Two clients running the same tool on one server no longer share windows either.
 - `wish desktop`: starting several instances of one tool no longer asserts on a shared dockspace; each instance gets its own.
 - Web renderer: the punctuation keys (`-` `=` `,` `.` `/` `;` `\`) and the numeric keypad now reach the server as keys, not only as typed characters, so shortcuts using them work in the browser.
@@ -144,6 +161,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `wish server` and `wish standalone` use the SDL3 renderer (a native window) by default, which plays video best; pass `--renderer web` for the browser renderer. A build without SDL3 still defaults to `web`.
+- One wish home for every file wish keeps (see [docs/wish-home.md](docs/wish-home.md)): `~/.wish` by default, set with the new `--wish_home` flag (`wish server`, `wish standalone`, `wish desktop`) or `WISH_HOME`. The server store moved to `server/store.bison`; each user gets a profile, `users/<user>/`, holding its user store (`store.bison`), its sandbox (`sandbox/`) and its desktop config (`desktop/desktop.yaml`); logs, screenshots and profiler traces moved from the working directory to `logs/`, `screenshots/` and `traces/`. Files in the old locations are not migrated.
+- Clients connect as the logged-in OS user unless they pass a `username` (`wish client --username`); `--anonymous` (`{"anonymous": true}` in any binding's connect params) connects without an identity. `wish standalone` uses the OS user instead of `default`.
+- Identified sessions keep their sandbox across connections by default on local servers (pipe, terminal, in-process, loopback TCP/TLS); `wish server --persistent_sandboxes auto|true|false`, `wish::server::set_persistent_sandboxes()` and the `persistent_sandboxes` param of `wish_server_start()` control it. Anonymous sessions always get a temporary sandbox.
+- Identities are normalized: lowercased, spaces become `_`, and only `[a-z0-9._-]` (1-64 characters, not starting with `.`) are accepted; anything else is anonymous.
+- `wish server`/`wish standalone`: `--profiling` enables the profiler with traces in `<wish_home>/traces`; `--profiling_dir` still sets another directory.
+- `wish::server::set_home()`/`home()`, `wish::standalone::set_home()`, `wish::wish_home`, `wish::os_user_name()`, `wish::normalize_identity()`, `wish::client::apply_default_identity()`; the `wish_home` param of `wish_server_start()` and Python `Server.start()`.
+- `wish server`: closing its window (close button, Alt+F4), **Server → Quit** and the `wish desktop` "Shut down server" action now ask for confirmation, with the same dialog as the overlay's **Shut down server** button (Ctrl+C still stops it right away). The desktop's "Shut down server" works again after a cancel; `DesktopShell.shutdown` is reset to `false` once seen.
+- `wish desktop`: the tray's theme button opens a menu of every theme instead of switching between light and dark, and the `toggle_theme` action cycles through all of them.
+- Python `AutomationClient.launch()` starts `wish server` with `--overlay_hotkey=` (no server overlay or startup notification) unless the command sets that flag, so the toast never covers widgets under test.
 - The bundled tools' panels no longer have a close button that closed the whole tool; the app window's close button (or the taskbar's "Close window") closes it. Dialogs, nano's file windows and its Search panel keep theirs.
 - Only one `wish desktop` can run at a time: a second one prints `wish desktop is already running` and exits with 1.
 - `wish desktop` exits when the wish server it draws on stops, releasing its endpoint (it used to keep running with nothing to show).
@@ -185,6 +212,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `wish_server_set_verbose()` / binding `set_verbose(bool)` are deprecated: `true` now maps to log level `trace`, `false` to `none`.
 - Server render loop: reduced per-frame CPU and heap-allocation churn — zero-copy string field access on the render/measure/arrange hot path, `ui_element::for_each_child_ordered()` no longer allocates per call, cached MenuBar-child detection, and fewer per-frame map/style copies in the render loop. No behavior change.
 - Read-only RMI requests (`get` / `describe` / `dictionary` / `help`) no longer schedule redraw frames — a client polling widget values with `get` no longer holds a session at full framerate. Mutating requests (`set`, `call`, `instantiate`, …) are unaffected.
+
+### Removed
+
+- `--store_dir` and `--sandbox_root` (use `--wish_home`, `--persistent_sandboxes`); `wish::server::set_store_dir()`/`store_dir()`/`set_persistent_sandbox_root()`/`persistent_sandbox_root()`, `wish::standalone::set_store_dir()`/`store_dir()`/`set_persistent_sandbox()`, `default_store_dir()`, and the `store_dir` param of `wish_server_start()`.
 
 ## [1.0.0] - 2026-08-27
 

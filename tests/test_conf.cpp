@@ -104,16 +104,16 @@ class ConfTest : public ::testing::Test {
   void SetUp() override {
     wish::register_all();
     {
-      wish::persistent_store user(dir_ / "users" / "alice.bison");
+      wish::persistent_store user(dir_ / "users" / "alice" / "store.bison");
       describe_example(user);
-      wish::persistent_store server(dir_ / "server_store.bison");
+      wish::persistent_store server(dir_ / "server" / "store.bison");
       describe_server_theme(server);
     }
   }
 
   void start(std::set<std::string> admins = {}, const std::string& user = "alice") {
     srv_ = std::make_unique<capturing_server>(transport_, std::make_unique<wish::null_renderer>());
-    srv_->set_store_dir(dir_);
+    srv_->set_home(dir_);
     srv_->set_settings_admins(std::move(admins));
     srv_->start(std::make_shared<wish::local_auth_module>());
     client_ = std::make_unique<bdg::bison::rmi::client>(transport_.connect());

@@ -87,6 +87,11 @@ public final class Client implements AutoCloseable {
    * <p>{@code params} is forwarded to both the transport's connection setup
    * and the server's connect handshake payload, e.g. fields a server-side
    * auth module inspects (see {@code src/auth/DESIGN.md}).
+   *
+   * <p>Without a {@code "username"} (or {@code "anonymous": true}) field the
+   * session connects as the OS user, which on Android is the app's uid name
+   * (e.g. {@code u0_a123}), not the person using it: pass the app's own
+   * user name, or {@code "anonymous": true}. See {@code docs/wish-home.md}.
    */
   public void run(SessionCallback sessionFn, Dynamic params) {
     int rc = nativeRunWithParams(handle, this, sessionFn, params == null ? 0 : params.handle());
@@ -213,10 +218,47 @@ public final class Client implements AutoCloseable {
     return nativeDownloadFile(handle, name);
   }
 
+  // ─── Resource packages ────────────────────────────────────────────────────
+
+  /** {@link ResourceSyncListener} state: a chunk was uploaded; more calls follow. */
+  public static final int SYNC_PROGRESS = 0;
+  /** Final {@link ResourceSyncListener} state: the zip was uploaded and unpacked. */
+  public static final int SYNC_UPLOADED = 1;
+  /** Final {@link ResourceSyncListener} state: the server already had this version. */
+  public static final int SYNC_CACHED = 2;
+  /** Final {@link ResourceSyncListener} state: the sync failed. */
+  public static final int SYNC_FAILED = 3;
+
+  /**
+   * Keeps a local zip of resources in sync with the session sandbox, in the
+   * background.
+   *
+   * <p>The server remembers which version (modified time and size) of
+   * package {@code name} it last unpacked; the zip is uploaded and unpacked
+   * into {@code destPath} ({@code ""}: the sandbox root) only if it changed.
+   * Unpacking adds and overwrites files, never deletes any. {@code name}
+   * must be unique, e.g. {@code "acme.game.level1"} (1-128 characters from
+   * {@code [A-Za-z0-9_.-]}). Returns at once; {@code listener} (may be
+   * {@code null}) reports progress and completion.
+   *
+   * @throws WishException if the sync cannot start (e.g. a missing zip)
+   */
+  public void syncResourcePackage(String name, String localZipPath, String destPath, ResourceSyncListener listener) {
+    check(nativeSyncResourcePackage(handle, name, localZipPath, destPath == null ? "" : destPath, listener));
+  }
+
+  /**
+   * Blocks until every {@link #syncResourcePackage} on this client has
+   * finished. Must not be called from a {@link ResourceSyncListener}.
+   */
+  public void waitResourceSyncs() {
+    check(nativeWaitResourceSyncs(handle));
+  }
+
   // ─── User store ───────────────────────────────────────────────────────────
   //
   // A persistent store of named objects private to this session's identity
-  // (connect with a "username" param); see docs/persistent-store.md. Every
+  // (connect with a "username" param, see run()); see docs/persistent-store.md. Every
   // method below except hasUserStore() throws WishException (code
   // WISH_ERR_UNAVAILABLE = -6) for an anonymous session.
 
@@ -294,6 +336,70 @@ public final class Client implements AutoCloseable {
     nativeSettingsDescribeCategory(handle, category.toJson());
   }
 
+  // ─── Notifications ──────────────────────────────────────────────────────
+
+  /** A notification's severity: its accent color and icon (WISH_NOTIFY_*). */
+  public enum NotifyKind {
+    INFO(0), SUCCESS(1), WARNING(2), ERROR(3);
+
+    final int code;
+
+    NotifyKind(int code) { this.code = code; }
+  }
+
+  /** Shows an info toast on the server's screen for 6 seconds; returns its id. */
+  public long showNotification(String title, String body) {
+    return showNotification(title, body, NotifyKind.INFO, 6000, "", "");
+  }
+
+  /**
+   * Shows a toast notification on the server's screen and returns its id (named so as not to
+   * overload {@code Object.notify()}). The server shows
+   * this session's identity on it and keeps at most 4 per session.
+   *
+   * @param durationMs how long it stays; 0 keeps it until dismissed (at most 5 minutes)
+   * @param keys key combination drawn as key caps, e.g. "Ctrl+B"
+   * @param tag replaces this session's notification with the same tag
+   * @throws WishException when the server shows no notifications or the title is empty
+   */
+  public long showNotification(String title, String body, NotifyKind kind, int durationMs, String keys, String tag) {
+    long r = nativeNotify(handle, title, body, kind.code, keys, durationMs, tag);
+    if (r < 0) check((int) r);
+    return r;
+  }
+
+  /** Removes one of this session's notifications early. */
+  public void dismissNotification(long id) {
+    check(nativeNotifyDismiss(handle, id));
+  }
+
+  // ─── Media playback ─────────────────────────────────────────────────────
+
+  /** Whether the server plays media (it was built with FFmpeg). */
+  public boolean hasMedia() {
+    return nativeMediaAvailable(handle);
+  }
+
+  /** Opens {@code path} paused, at full volume; see {@link #openMedia(String, String, boolean, boolean, float)}. */
+  public MediaPlayer openMedia(String name, String path) {
+    return openMedia(name, path, false, false, 1.0f);
+  }
+
+  /**
+   * Opens {@code path}, a file already uploaded to the session sandbox, as player {@code name}.
+   * The server plays it; show its video with a {@code Video} widget whose {@code player} is
+   * {@code name}. Absolute paths, {@code ..} escapes and URLs are refused.
+   *
+   * @throws WishException when the server plays no media, the path is refused or missing, or
+   *     the file isn't playable
+   */
+  public MediaPlayer openMedia(String name, String path, boolean autoplay, boolean loop, float volume) {
+    int flags = (autoplay ? 1 : 0) | (loop ? 2 : 0);
+    long media = nativeMediaOpen(handle, name, path, flags, volume);
+    if (media < 0) check((int) media);
+    return new MediaPlayer(this, media, name);
+  }
+
   // ─── Logging ────────────────────────────────────────────────────────────
 
   /** Sends a structured log message; {@code level} is "debug"/"info"/"warn"/"error". */
@@ -339,6 +445,10 @@ public final class Client implements AutoCloseable {
   private static native int nativeUploadFile(long handle, String name, byte[] data);
   private static native byte[] nativeDownloadFile(long handle, String name);
 
+  private static native int nativeSyncResourcePackage(
+      long handle, String name, String localZipPath, String destPath, ResourceSyncListener listener);
+  private static native int nativeWaitResourceSyncs(long handle);
+
   private static native boolean nativeUserStoreAvailable(long handle);
   private static native long nativeUserStoreGet(long handle, String name);
   private static native void nativeUserStoreSet(long handle, String name, long valueHandle);
@@ -348,6 +458,13 @@ public final class Client implements AutoCloseable {
   private static native void nativeSettingsDescribe(long handle, String json);
   private static native void nativeSettingsDescribeCategory(long handle, String json);
   private static native String nativeSettingsRead(long handle, String json);
+
+  private static native long nativeNotify(
+      long handle, String title, String body, int kind, String keys, int durationMs, String tag);
+  private static native int nativeNotifyDismiss(long handle, long id);
+
+  private static native boolean nativeMediaAvailable(long handle);
+  private static native long nativeMediaOpen(long handle, String name, String path, int flags, float volume);
 
   private static native int nativeLog(long handle, String level, String msg);
 }

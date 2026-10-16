@@ -64,6 +64,10 @@ struct wish_server_handle_ {
   std::unique_ptr<server_transport_iface> transport_;
   std::unique_ptr<wish::server> server_;
 
+  // Bind address of a TCP/TLS listener; empty for every other transport.
+  // Decides the persistent-sandboxes default (see wish_server_start()).
+  std::string bind_host_;
+
   wish::log_level log_level_ = wish::log_level::none;
   wish::logger_ptr logger_;
 
@@ -175,6 +179,7 @@ extern "C" wish_server_handle wish_server_tcp_create(const char* host, uint16_t 
   try {
     auto state = std::make_unique<wish_server_handle_>();
     state->transport_ = std::make_unique<socket_server_transport>(host, port);
+    state->bind_host_ = host;
     return state.release();
   } catch (...) {
     return nullptr;
@@ -199,6 +204,7 @@ extern "C" wish_server_handle wish_server_tls_create(const char* host, uint16_t 
   try {
     auto state = std::make_unique<wish_server_handle_>();
     state->transport_ = std::make_unique<tls_socket_server_transport>(host, port);
+    state->bind_host_ = host;
     return state.release();
   } catch (...) {
     return nullptr;
@@ -237,9 +243,14 @@ wish_server_start(wish_server_handle s, const char* renderer_kind, bison_handle 
           std::filesystem::path{});
       s->server_->set_logger(s->logger_);
     }
-    if (const auto* dir = dyn_params.findField("store_dir"_key); dir && dir->is<std::string>() &&
-        !dir->as<std::string>().empty())
-      s->server_->set_store_dir(dir->as<std::string>());
+    if (const auto* dir = dyn_params.findField("wish_home"_key); dir && dir->is<std::string>())
+      s->server_->set_home(dir->as<std::string>());
+    // Same default as `wish server`: persistent sandboxes for local-only
+    // listeners (a loopback TCP/TLS bind counts), temp ones otherwise.
+    if (const auto* f = dyn_params.findField("persistent_sandboxes"_key); f && f->is<bool>())
+      s->server_->set_persistent_sandboxes(f->as<bool>());
+    else if (!s->bind_host_.empty() && wish::is_loopback_host(s->bind_host_))
+      s->server_->set_persistent_sandboxes(true);
     // Same policy as the `wish server` CLI: trust a client-supplied
     // "username" connect field as the session identity, so identified
     // clients get a user store and the rest stay anonymous.

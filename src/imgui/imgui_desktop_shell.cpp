@@ -352,6 +352,7 @@ struct shell_frame {
   int32_t clients{0};
   std::optional<ImGuiStyle> style;
   bool light{false};
+  std::string theme; ///< The desktop session's preset name.
   std::string config_error;
   bool shutdown{false};
   std::vector<desktop_app_info> apps; ///< Menu entries, then unlisted apps.
@@ -374,7 +375,7 @@ std::optional<shell_frame> snapshot(imgui_renderer& r, const std::vector<sync_co
   bool found = false;
   for (const auto& sync_ctx : sessions) {
     auto sess = context_wlock{*sync_ctx};
-    const ui_element* shell = nullptr;
+    ui_element* shell = nullptr;
     key_t shell_key{0u};
     if (!found) {
       for (const auto& [key, root] : sess->top_level_objects) {
@@ -404,8 +405,14 @@ std::optional<shell_frame> snapshot(imgui_renderer& r, const std::vector<sync_co
       if (const ImGuiStyle* st = r.session_style(*sess))
         f.style = *st;
       f.light = sess->style_service && sess->style_service->is_light_theme();
+      if (sess->style_service)
+        f.theme = sess->style_service->current_style().get_as<std::string>("preset"_key, std::string{});
       f.config_error = shell->get_as<std::string>("config_error"_key, std::string{});
       f.shutdown = shell->get_as<bool>("shutdown"_key, false);
+      // One request per `true`: cleared, so the next one (e.g. after the
+      // operator cancelled the confirmation) is seen again.
+      if (f.shutdown)
+        (*shell)["shutdown"_key] = false;
       {
         desktop_menu m = detail::desktop_collect_menu(*shell);
         f.apps = std::move(m.apps);
@@ -691,12 +698,10 @@ void shell_painter::update_window_order() {
 
 void shell_painter::draw() {
   update_window_order();
-  // The desktop's "shutdown_server" action: shut the hosting server down,
-  // once.
-  if (f_.shutdown && !st_.shutdown_requested && shutdown_server_) {
-    st_.shutdown_requested = true;
+  // The desktop's "shutdown_server" action: shut the hosting server down
+  // (the host asks the operator to confirm first).
+  if (f_.shutdown && shutdown_server_)
     shutdown_server_();
-  }
   {
     const ImGuiWindow* nav = GImGui->NavWindow;
     const char* nav_name = nav && nav->RootWindow ? nav->RootWindow->Name : "";
@@ -1353,22 +1358,38 @@ void shell_painter::draw_tray(float height) {
     ImGui::SameLine();
   }
 
-  // Theme toggle.
+  // Theme menu: every theme the renderer has (registered_themes()).
   {
+    const auto themes = registered_themes();
+    const auto current = find_theme_info(f_.theme);
+    const std::string current_label = current ? current->label : (f_.light ? "Light" : "Dark");
     ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 0, 0, 0));
     bool clicked = bar_button(
         "##wish_theme",
-        texture(f_.light ? kDarkIcon : kLightIcon),
+        texture(f_.light ? kLightIcon : kDarkIcon),
         button,
         icon_px_ * 0.8f,
         ImGui::GetColorU32(ImGuiCol_Text),
-        f_.light ? "Dark" : "Light");
+        current_label.c_str());
     ImGui::PopStyleColor();
-    ImGui::SetItemTooltip("%s", f_.light ? "Switch to dark theme" : "Switch to light theme");
-    if (clicked) {
-      dynamic p;
-      p["preset"_key] = std::string{f_.light ? "dark" : "light"};
-      emit("theme", std::move(p));
+    ImGui::SetItemTooltip("Theme: %s", current_label.c_str());
+    ImRect theme_rect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+    if (clicked)
+      ImGui::OpenPopup("##wish_theme_menu");
+    // Opens upward from the taskbar.
+    ImGui::SetNextWindowPos(ImVec2(theme_rect.Max.x, theme_rect.Min.y - 4.0f), ImGuiCond_Always, ImVec2(1.0f, 1.0f));
+    if (ImGui::BeginPopup("##wish_theme_menu")) {
+      ImGui::TextDisabled("Theme");
+      ImGui::Separator();
+      for (const auto& t : themes) {
+        const std::string label = t.label + (t.is_light ? "  (light)" : "  (dark)") + "##" + t.name;
+        if (ImGui::MenuItem(label.c_str(), nullptr, t.name == f_.theme) && t.name != f_.theme) {
+          dynamic p;
+          p["preset"_key] = t.name;
+          emit("theme", std::move(p));
+        }
+      }
+      ImGui::EndPopup();
     }
     ImGui::SameLine();
   }

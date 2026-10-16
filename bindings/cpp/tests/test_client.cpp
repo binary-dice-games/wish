@@ -13,6 +13,8 @@
 #include <bison_c.h>
 #include <gtest/gtest.h>
 #include <auth/local_auth_module.hpp>
+#include <context/os_user.hpp>
+#include <context/wish_home.hpp>
 #include <server/registry.hpp>
 #include <server/server.hpp>
 
@@ -22,6 +24,9 @@
 #include "src/rmi/transport/socket_transport.hpp"
 #include "src/rmi/transport/tls_socket_transport.hpp"
 #include "tests/tls_test_certs.hpp"
+
+#include <miniz.h>
+#include <miniz_zip.h>
 
 #include <chrono>
 #include <condition_variable>
@@ -165,6 +170,47 @@ TEST_F(WishCppClientTest, RegisterTemplateAppliesTranslations) {
     EXPECT_EQ(c.translate("$$GREETING"), "Hola");
     EXPECT_THROW(c.set_language("../x"), wish::error);
   });
+}
+
+TEST_F(WishCppClientTest, SyncResourcePackageUploadsThenCaches) {
+  auto* info = ::testing::UnitTest::GetInstance()->current_test_info();
+  auto zip_path = std::filesystem::temp_directory_path() /
+      (std::string{"wish_cpp_"} + info->test_suite_name() + "_" + info->name() + ".zip");
+  {
+    mz_zip_archive zip{};
+    ASSERT_TRUE(mz_zip_writer_init_file(&zip, zip_path.string().c_str(), 0));
+    const std::string content = "alpha";
+    ASSERT_TRUE(mz_zip_writer_add_mem(&zip, "a.txt", content.data(), content.size(), MZ_DEFAULT_COMPRESSION));
+    ASSERT_TRUE(mz_zip_writer_finalize_archive(&zip));
+    mz_zip_writer_end(&zip);
+  }
+
+  // Written on the sync thread, read after wait_resource_syncs().
+  std::vector<wish::client::resource_sync_status> first, second;
+  std::string content;
+  auto client = wish::client::tcp("127.0.0.1", port_);
+  client.run([&](wish::client& c) {
+    c.sync_resource_package("test.cpp", zip_path.string(), "assets", [&](const auto& s) { first.push_back(s); });
+    c.wait_resource_syncs();
+    content = c.download_file("assets/a.txt");
+
+    c.sync_resource_package("test.cpp", zip_path.string(), "assets", [&](const auto& s) { second.push_back(s); });
+    c.wait_resource_syncs();
+
+    EXPECT_THROW(c.sync_resource_package("test.cpp", zip_path.string() + ".missing"), wish::error);
+  });
+
+  ASSERT_FALSE(first.empty());
+  EXPECT_EQ(first.back().state, WISH_SYNC_UPLOADED);
+  EXPECT_EQ(first.back().name, "test.cpp");
+  for (std::size_t i = 0; i + 1 < first.size(); ++i)
+    EXPECT_EQ(first[i].state, WISH_SYNC_PROGRESS);
+  EXPECT_EQ(content, "alpha");
+  ASSERT_FALSE(second.empty());
+  EXPECT_EQ(second.back().state, WISH_SYNC_CACHED);
+  EXPECT_EQ(second.back().transferred, second.back().total);
+
+  std::filesystem::remove(zip_path);
 }
 
 TEST_F(WishCppClientTest, ProxyGetForUnknownPathThrows) {
@@ -333,7 +379,7 @@ class WishCppUserStoreTest : public ::testing::Test {
     dir_ = std::filesystem::temp_directory_path() / (std::string{"wish_cpp_store_"} + info->name());
     std::filesystem::remove_all(dir_);
     auto s = start_on_free_port_configured<bdg::bison::rmi::transport::socket_server_transport>(
-        0, [this](bdg::wish::server& srv) { srv.set_store_dir(dir_); },
+        0, [this](bdg::wish::server& srv) { srv.set_home(dir_); },
         std::make_shared<bdg::wish::local_auth_module>());
     transport_ = std::move(s.transport);
     server_ = std::move(s.server);
@@ -346,9 +392,14 @@ class WishCppUserStoreTest : public ::testing::Test {
     std::filesystem::remove_all(dir_, ec);
   }
 
+  // Empty @p username: an explicitly anonymous session (without
+  // "anonymous", the session would connect as the OS user).
   static wish::value as_user(const std::string& username) {
     wish::value p;
-    if (!username.empty()) p["username"_key] = username;
+    if (!username.empty())
+      p["username"_key] = username;
+    else
+      p["anonymous"_key] = true;
     return p;
   }
 
@@ -449,26 +500,50 @@ TEST_F(WishCppUserStoreTest, ReadsSettingsOrTheirDefaults) {
       as_user("alice"));
   // Anonymous: the default, not an error.
   auto anon = wish::client::tcp("127.0.0.1", port_);
-  anon.run([](wish::client& c) {
-    wish::setting_info on;
-    on.name = "bdg.desktop.example.on";
-    on.type = "bool";
-    on.default_value = true;
-    EXPECT_TRUE(std::get<bool>(c.read_setting(on)));
+  anon.run(
+      [](wish::client& c) {
+        wish::setting_info on;
+        on.name = "bdg.desktop.example.on";
+        on.type = "bool";
+        on.default_value = true;
+        EXPECT_TRUE(std::get<bool>(c.read_setting(on)));
+      },
+      as_user(""));
+}
+
+TEST_F(WishCppUserStoreTest, ClientPostsAndDismissesNotifications) {
+  auto client = wish::client::tcp("127.0.0.1", port_);
+  client.run([](wish::client& c) {
+    const uint64_t id =
+        c.notify("Backup finished", "42 files", wish::client::notify_kind::success, 0, "Ctrl+B", "backup");
+    EXPECT_GT(id, 0u);
+    EXPECT_EQ(c.notify("Backup finished", "43 files", wish::client::notify_kind::success, 0, "", "backup"), id)
+        << "same tag: replaced";
+    c.dismiss_notification(id);
+    EXPECT_THROW(c.notify(""), wish::error);
   });
 }
 
 TEST_F(WishCppUserStoreTest, AnonymousClientGetsUnavailable) {
   auto client = wish::client::tcp("127.0.0.1", port_);
-  client.run([](wish::client& c) {
-    EXPECT_FALSE(c.has_user_store());
-    try {
-      c.user_store_keys();
-      FAIL() << "expected wish::error";
-    } catch (const wish::error& e) {
-      EXPECT_EQ(e.code(), WISH_ERR_UNAVAILABLE);
-    }
-  });
+  client.run(
+      [](wish::client& c) {
+        EXPECT_FALSE(c.has_user_store());
+        try {
+          c.user_store_keys();
+          FAIL() << "expected wish::error";
+        } catch (const wish::error& e) {
+          EXPECT_EQ(e.code(), WISH_ERR_UNAVAILABLE);
+        }
+      },
+      as_user(""));
+}
+
+TEST_F(WishCppUserStoreTest, ClientWithoutUsernameConnectsAsOsUser) {
+  if (bdg::wish::normalize_identity(bdg::wish::os_user_name()).empty())
+    GTEST_SKIP() << "the OS user name is unknown or not a valid identity";
+  auto client = wish::client::tcp("127.0.0.1", port_);
+  client.run([](wish::client& c) { EXPECT_TRUE(c.has_user_store()); });
 }
 
 // Firing a real "clicked" event needs a live renderer frame loop (see
@@ -545,3 +620,82 @@ TEST_F(WishCppTlsClientTest, MissingTrustAnchorFailsHandshake) {
   auto client = wish::client::tls("127.0.0.1", port_);
   EXPECT_THROW(client.run([](wish::client&) {}), wish::error);
 }
+
+// ── Media playback ───────────────────────────────────────────────────────
+
+#ifdef WISH_MEDIA_ENABLED
+
+namespace {
+
+// 16-bit stereo 48 kHz WAV of silence, @p seconds long.
+std::string silent_wav(double seconds) {
+  const uint32_t frames = static_cast<uint32_t>(seconds * 48000);
+  const uint32_t data = frames * 4;
+  std::string out;
+  auto u32 = [&](uint32_t v) { out.append(reinterpret_cast<const char*>(&v), 4); };
+  auto u16 = [&](uint16_t v) { out.append(reinterpret_cast<const char*>(&v), 2); };
+  out += "RIFF";
+  u32(36 + data);
+  out += "WAVEfmt ";
+  u32(16);
+  u16(1);
+  u16(2);
+  u32(48000);
+  u32(48000 * 4);
+  u16(4);
+  u16(16);
+  out += "data";
+  u32(data);
+  out.append(data, '\0');
+  return out;
+}
+
+}  // namespace
+
+TEST(WishCppMediaTest, OpensPlaysAndHearsTheEnd) {
+  auto s = start_on_free_port<bdg::bison::rmi::transport::socket_server_transport>(0);
+  auto client = wish::client::tcp("127.0.0.1", s.port);
+  bool has = false, ended = false, refused = false, closed_throws = false;
+  wish::media_status st;
+  client.run([&](wish::client& c) {
+    has = c.has_media();
+    c.upload_file("quiet.wav", silent_wav(0.3));
+    wish::media_options options;
+    options.volume = 0.0f;
+    auto player = c.open_media("quiet", "quiet.wav", options);
+    EXPECT_EQ(player.name(), "quiet");
+    std::promise<void> end;
+    std::once_flag once;
+    player.on_event([&](const wish::media_player::event& e) {
+      if (e.what == wish::media_player::event::kind::ended)
+        std::call_once(once, [&] { end.set_value(); });
+    });
+    st = player.status();
+    player.play();
+    ended = end.get_future().wait_for(std::chrono::seconds(10)) == std::future_status::ready;
+    EXPECT_EQ(player.status().state, wish::media_state::ended);
+    EXPECT_EQ(player.error_message(), "");
+    try {
+      c.open_media("x", "../escape.wav");
+    } catch (const wish::error&) {
+      refused = true;
+    }
+    player.close();
+    try {
+      player.play();
+    } catch (const wish::error&) {
+      closed_throws = true;
+    }
+  });
+  s.server->stop();
+  EXPECT_TRUE(has);
+  EXPECT_TRUE(st.has_audio);
+  EXPECT_FALSE(st.has_video);
+  EXPECT_NEAR(st.duration, 0.3, 0.05);
+  EXPECT_EQ(st.state, wish::media_state::stopped);
+  EXPECT_TRUE(ended);
+  EXPECT_TRUE(refused);
+  EXPECT_TRUE(closed_throws);
+}
+
+#endif  // WISH_MEDIA_ENABLED

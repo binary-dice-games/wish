@@ -4,12 +4,16 @@
 #pragma once
 
 #include <context/context.hpp>
+#include <server/notifications.hpp>
 #include <ui/ui_element.hpp>
 
 #ifdef WISH_AUTOMATION_ENABLED
 #include <automation/automation_backend.hpp>
 #endif
 
+#include <cstdint>
+#include <functional>
+#include <memory>
 #include <vector>
 
 namespace bdg::wish {
@@ -25,6 +29,37 @@ inline bool is_host_chrome_class(bison::key_t class_key) {
   return class_key == bison::key_t{"MenuBarExtension"} || class_key == bison::key_t{"DesktopShell"} ||
       class_key == bison::key_t{"DesktopApp"};
 }
+
+/**
+ * @brief A texture whose pixels the server rewrites at runtime (e.g. the
+ *        frames of a playing video).
+ *
+ * Created by `renderer::create_dynamic_texture()` and used only on the render
+ * thread, except for destruction: the last reference may be dropped on any
+ * thread (e.g. when a session ends), and the backend frees its resources on
+ * the render thread afterwards.
+ */
+class dynamic_texture {
+ public:
+  virtual ~dynamic_texture() = default;
+
+  /// @brief Width in pixels.
+  virtual int width() const = 0;
+
+  /// @brief Height in pixels.
+  virtual int height() const = 0;
+
+  /**
+   * @brief Replaces every pixel; shown from the next presented frame.
+   * @param rgba   `height()` rows of `width()` RGBA8 pixels.
+   * @param pitch  Bytes between the starts of two rows (>= 4 * width()).
+   */
+  virtual void update(const uint8_t* rgba, int pitch) = 0;
+
+  /// @brief Backend handle: an `ImTextureData*` for the imgui backends.
+  virtual void* native_handle() const = 0;
+};
+using dynamic_texture_ptr = std::shared_ptr<dynamic_texture>;
 
 /**
  * @brief Abstract rendering backend contract.
@@ -170,6 +205,18 @@ class renderer {
     return false;
   }
 
+  /**
+   * @brief Creates a texture whose pixels can be replaced every frame (see
+   *        `dynamic_texture`). Render thread only.
+   * @return A black @p w x @p h texture, or null when this backend draws no
+   *         textures (the default: headless/null renderers).
+   */
+  virtual dynamic_texture_ptr create_dynamic_texture(int w, int h) {
+    (void)w;
+    (void)h;
+    return nullptr;
+  }
+
   /// @brief Called once before any nodes are rendered in a frame.
   virtual void begin_frame() = 0;
 
@@ -192,6 +239,52 @@ class renderer {
    */
   virtual void render_server_frame(const std::vector<sync_context_ptr>& sessions) {
     (void)sessions;
+  }
+
+  /**
+   * @brief Optional server-level UI rendered once per frame after every
+   *        client session, so it draws on top of them: overlays and toast
+   *        notifications.
+   *
+   * Called from `wish::server::render_loop` (and `wish::standalone`'s)
+   * after the last session is rendered and before `end_frame`, with no
+   * session locked. The default is a no-op; `host_renderer` draws the
+   * server overlay and `notifications()` here.
+   *
+   * @param sessions Same snapshot `render_server_frame()` received.
+   */
+  virtual void render_server_overlay(const std::vector<sync_context_ptr>& sessions) {
+    (void)sessions;
+  }
+
+  /// @brief Receives a PNG-encoded screenshot; empty when capturing failed.
+  using screenshot_callback = std::function<void(std::vector<uint8_t> png)>;
+
+  /**
+   * @brief Asks for a PNG of the next frame this renderer finishes, with
+   *        everything that frame draws.
+   *
+   * @p done runs once, on any thread: the render thread (SDL3) or a
+   * WebSocket thread (web, where the browser that shows the server
+   * captures its canvas and sends it back). The default renderer can't
+   * take screenshots.
+   *
+   * @return false when no screenshot can be taken now (unsupported, or no
+   *         browser connected); @p done is then never called.
+   */
+  virtual bool request_screenshot(screenshot_callback done) {
+    (void)done;
+    return false;
+  }
+
+  /**
+   * @brief Toast notifications this renderer shows (see
+   *        `notification_center`). Always non-null; shared with every
+   *        session as `context::notifications`, so server-side code can
+   *        post them. Backends that draw no chrome simply never show them.
+   */
+  const notification_center_ptr& notifications() const {
+    return notifications_;
   }
 
   /**
@@ -282,6 +375,9 @@ class renderer {
     return nullptr;
   }
 #endif
+
+ private:
+  notification_center_ptr notifications_{std::make_shared<notification_center>()};
 };
 
 /**

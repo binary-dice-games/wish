@@ -15,11 +15,19 @@
 #include <chrono>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <thread>
 
 namespace bdg::wish {
+
+/**
+ * @brief True if @p host is a loopback bind address: `localhost`,
+ *        `127.x.x.x`, `::1` or `[::1]`. A server bound to one only accepts
+ *        local connections (see `server::set_persistent_sandboxes()`).
+ */
+bool is_loopback_host(const std::string& host);
 
 /**
  * @brief Hosts wish UI elements over an RMI transport.
@@ -68,8 +76,9 @@ class server : public bison::rmi::server {
    * @param auth_module   Optional authentication hook (see
    *                     `bison::rmi::auth_module_iface`), evaluated once per
    *                     connection. `nullptr` (default) disables the
-   *                     feature: no session ever gets a persistent sandbox
-   *                     directory, regardless of `set_persistent_sandbox_root`.
+   *                     feature: every session is anonymous (no user store,
+   *                     temp sandbox), regardless of
+   *                     `set_persistent_sandboxes()`.
    *                     A parameter rather than a setter, since the module
    *                     cannot sensibly change once the accept loop is
    *                     running -- mirrors `bison::rmi::server::listen()`.
@@ -167,26 +176,28 @@ class server : public bison::rmi::server {
   void set_default_language(std::string lang);
 
   /**
-   * @brief Enable persistent, identity-keyed session sandbox directories.
+   * @brief Whether identified sessions keep their sandbox across runs.
    *
-   * When set, and a connection both supplies a non-empty identity (via
-   * `start()`'s `auth_module`) and passes authentication, `on_authenticated()`
-   * switches that session's `resource_dir` to `root / identity` instead of
-   * the default throwaway temp directory, so previously uploaded files
-   * persist across reconnects. This is the privacy opt-in: persistent,
-   * identity-keyed directories are only ever created when an operator has
-   * explicitly configured a root here, mirroring `set_allow_absolute_paths`.
+   * When on, a session whose auth module yields a valid identity uses
+   * `home().user_sandbox_dir(identity)` as its `resource_dir`, never
+   * deleted by wish, instead of a throwaway temp directory. Anonymous
+   * sessions always get the temp directory. See src/context/DESIGN.md.
    *
-   * Empty (default) disables persistence entirely, regardless of whether an
-   * auth module is set or what identity it produces.
+   * Unset, the default depends on the transport: off for a TCP or TLS
+   * listener (reachable from the network, and `local_auth_module` trusts
+   * the client-claimed identity), on for every other transport. A caller
+   * that knows a TCP listener is bound to loopback (see
+   * `is_loopback_host()`) turns it on explicitly.
    *
    * Must be called before `start()`.
-   *
-   * @param root Directory under which per-identity subdirectories are
-   *             created.
    */
-  void set_persistent_sandbox_root(std::filesystem::path root) {
-    persistent_sandbox_root_ = std::move(root);
+  void set_persistent_sandboxes(bool enable) {
+    persistent_sandboxes_ = enable;
+  }
+
+  /// @brief See set_persistent_sandboxes(); the effective value.
+  bool persistent_sandboxes() const noexcept {
+    return persistent_sandboxes_.value_or(!network_transport_);
   }
 
   /**
@@ -196,31 +207,31 @@ class server : public bison::rmi::server {
    *
    * Empty (the default): no session may. The identity comes from the auth
    * module, so with `local_auth_module` (which trusts the client's claimed
-   * username) only list admins on trusted, local deployments.
+   * username) only list admins on trusted, local deployments. Names are
+   * normalized (see `normalize_identity()`); invalid ones are dropped.
    *
    * Must be called before `start()`.
    */
-  void set_settings_admins(std::set<std::string> identities) {
-    settings_admins_ = std::move(identities);
-  }
+  void set_settings_admins(const std::set<std::string>& identities);
 
   /**
-   * @brief Set the directory holding the persistent stores (see
-   *        `docs/persistent-store.md`).
+   * @brief Set the root of the wish home (see `wish_home` and
+   *        src/context/DESIGN.md): where the server store, user stores
+   *        and persistent sandboxes live.
    *
-   * Defaults to `default_store_dir()` (`~/.wish`). The server store lives at
-   * `dir/server_store.bison` and each identity's user store at
-   * `dir/users/<identity>.bison`. Files are created on first write only.
+   * Defaults to `wish_home::default_root()` (`$WISH_HOME`, else
+   * `~/.wish`). Empty also selects the default. Files are created on first
+   * use only.
    *
    * Must be called before `start()`.
    */
-  void set_store_dir(std::filesystem::path dir) {
-    stores_ = std::make_shared<store_registry>(std::move(dir));
+  void set_home(std::filesystem::path root) {
+    stores_ = std::make_shared<store_registry>(wish_home{std::move(root)});
   }
 
-  /// @brief Directory holding the persistent stores.
-  const std::filesystem::path& store_dir() const noexcept {
-    return stores_->dir();
+  /// @brief The wish home this server uses.
+  const wish_home& home() const noexcept {
+    return stores_->home();
   }
 
   /**
@@ -230,6 +241,22 @@ class server : public bison::rmi::server {
    */
   persistent_store& server_store() {
     return *stores_->server_store();
+  }
+
+  /**
+   * @brief The registry owning the server store and the per-identity user
+   *        stores. Server-side tools that edit a store (e.g. the server
+   *        overlay's settings page) must go through it rather than opening
+   *        the store files themselves, so they share the sessions' store
+   *        instances instead of overwriting each other's writes.
+   */
+  const store_registry_ptr& stores() const noexcept {
+    return stores_;
+  }
+
+  /// @brief See set_settings_admins().
+  const std::set<std::string>& settings_admins() const noexcept {
+    return settings_admins_;
   }
 
   /** @brief Stop the accept loop, render loop, and join all threads. */
@@ -265,12 +292,11 @@ class server : public bison::rmi::server {
   void on_session_created(bison::rmi::context& ctx) override final;
   void on_session_destroyed(bison::rmi::context& ctx) override final;
 
-  // Attaches the identity's user store (see docs/persistent-store.md) and
-  // switches a newly-authenticated session's resource_dir to a persistent,
-  // identity-keyed directory under persistent_sandbox_root_ -- see
-  // src/auth/DESIGN.md. No-op if identity is empty (the session stays
-  // anonymous: no user store, temp sandbox); the sandbox switch is also
-  // skipped when no persistent_sandbox_root_ is configured.
+  // Normalizes the identity, attaches its user store (see
+  // docs/persistent-store.md) and, when persistent_sandboxes(), switches
+  // the session's resource_dir to home().user_sandbox_dir(identity) -- see
+  // src/context/DESIGN.md. No-op if the identity is empty or invalid (the
+  // session stays anonymous: no user store, temp sandbox).
   void on_authenticated(bison::rmi::context& ctx, const std::string& identity) override final;
 
   // Receive formatted trace lines from the base class and forward to logger_.
@@ -319,14 +345,15 @@ class server : public bison::rmi::server {
   bool allow_url_fetch_{false};
   std::string default_theme_{"wish"};
   std::string default_language_;
-  // Empty (default) disables persistent sandbox directories entirely; see
-  // set_persistent_sandbox_root().
-  std::filesystem::path persistent_sandbox_root_;
+  // See set_persistent_sandboxes(); unset: !network_transport_.
+  std::optional<bool> persistent_sandboxes_;
+  // True when the transport is a TCP/TLS listener; set by the constructor.
+  bool network_transport_{false};
   // See set_settings_admins().
   std::set<std::string> settings_admins_;
   // Owns the server store and the per-identity user stores; see
-  // set_store_dir(). Replaced only before start().
-  store_registry_ptr stores_{std::make_shared<store_registry>(default_store_dir())};
+  // set_home(). Replaced only before start().
+  store_registry_ptr stores_{std::make_shared<store_registry>(wish_home{})};
 };
 
 } // namespace bdg::wish

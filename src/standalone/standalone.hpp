@@ -9,6 +9,7 @@
 #include <context/context.hpp>
 #include <context/logger.hpp>
 #include <context/persistent_store.hpp>
+#include <context/style_service.hpp>
 #include <i18n/translations.hpp>
 #include <server/renderer.hpp>
 #include "src/rmi/standalone/standalone.hpp"
@@ -102,40 +103,34 @@ class standalone : public bison::rmi::standalone {
   }
 
   /**
-   * @brief Keep the session sandbox across runs: the session's `resource_dir`
-   *        becomes `root / identity` instead of a throwaway temp directory.
+   * @brief Identity of the session (see `docs/persistent-store.md`) -- the
+   *        in-process equivalent of a client authenticating to
+   *        `wish::server` with that identity.
    *
-   * Mirrors `wish::server::set_persistent_sandbox_root()` plus the identity a
-   * client would supply. Ignored if @p identity is not a single safe path
-   * segment (see `is_safe_sandbox_identity()`). Must be called before `start()`.
-   */
-  void set_persistent_sandbox(std::filesystem::path root, std::string identity) {
-    persistent_sandbox_root_ = std::move(root);
-    persistent_identity_ = std::move(identity);
-  }
-
-  /**
-   * @brief Identity whose user store the session gets (see
-   *        `docs/persistent-store.md`) -- the in-process equivalent of a
-   *        client authenticating to `wish::server` with that identity.
-   *
-   * Empty (default) falls back to the `set_persistent_sandbox()` identity,
-   * if any; with neither, the session is anonymous and has no user store.
-   * Ignored if not a single safe path segment (see
-   * `is_safe_sandbox_identity()`). Must be called before `start()`.
+   * Normalized like the server does (see `normalize_identity()`). A valid
+   * identity gets its user store and, unless `set_persistent_sandboxes()`
+   * turned it off, `home().user_sandbox_dir(identity)` as its sandbox.
+   * Empty (default) or invalid: the session is anonymous -- no user store,
+   * temp sandbox. Must be called before `start()`.
    */
   void set_user_identity(std::string identity) {
     user_identity_ = std::move(identity);
   }
 
-  /// @copydoc bdg::wish::server::set_store_dir
-  void set_store_dir(std::filesystem::path dir) {
-    stores_ = std::make_shared<store_registry>(std::move(dir));
+  /// @copydoc bdg::wish::server::set_persistent_sandboxes
+  /// The default here is on: a standalone session is always local.
+  void set_persistent_sandboxes(bool enable) {
+    persistent_sandboxes_ = enable;
   }
 
-  /// @copydoc bdg::wish::server::store_dir
-  const std::filesystem::path& store_dir() const noexcept {
-    return stores_->dir();
+  /// @copydoc bdg::wish::server::set_home
+  void set_home(std::filesystem::path root) {
+    stores_ = std::make_shared<store_registry>(wish_home{std::move(root)});
+  }
+
+  /// @copydoc bdg::wish::server::home
+  const wish_home& home() const noexcept {
+    return stores_->home();
   }
 
   /// @copydoc bdg::wish::server::server_store
@@ -185,8 +180,19 @@ class standalone : public bison::rmi::standalone {
   /// @copydoc bdg::wish::client::create_temp_dir
   std::future<std::string> create_temp_dir(const std::string& qualified_app);
 
+  /// @copydoc bdg::wish::client::sync_resource_package
+  [[nodiscard]] std::future<bool> sync_resource_package(
+      const std::string& name,
+      const std::filesystem::path& local_zip,
+      const std::string& dest_path = "",
+      transfer_progress_callback on_progress = nullptr,
+      resource_sync_callback on_done = nullptr);
+
   /// @copydoc bdg::wish::client::set_style_preset
   std::future<void> set_style_preset(const std::string& name);
+
+  /// @copydoc bdg::wish::client::list_themes
+  std::future<std::vector<theme_info>> list_themes();
 
   /// @copydoc bdg::wish::client::set_style
   std::future<void> set_style(bison::dynamic params);
@@ -216,6 +222,26 @@ class standalone : public bison::rmi::standalone {
 
   /// @copydoc bdg::wish::client::describe_settings_category
   std::future<void> describe_settings_category(const settings::category_info& info);
+
+  /// @copydoc bdg::wish::client::has_notifications
+  bool has_notifications() const noexcept {
+    return notifications_proxy_.has_value();
+  }
+
+  /// @copydoc bdg::wish::client::notify
+  std::future<uint64_t> notify(const notification& n);
+
+  /// @copydoc bdg::wish::client::has_media
+  bool has_media() const noexcept {
+    return media_proxy_ != nullptr;
+  }
+
+  /// @copydoc bdg::wish::client::open_media
+  std::future<media_player> open_media(
+      const std::string& name, const std::string& path, const media_options& options = {});
+
+  /// @copydoc bdg::wish::client::dismiss_notification
+  std::future<bool> dismiss_notification(uint64_t id);
 
   /// @copydoc bdg::wish::client::log
   std::future<void> log(const std::string& level, const std::string& msg);
@@ -346,11 +372,10 @@ class standalone : public bison::rmi::standalone {
   std::chrono::steady_clock::time_point last_tick_time_{};
   logger_ptr logger_;
   bool allow_absolute_paths_{false};
-  std::filesystem::path persistent_sandbox_root_;
-  std::string persistent_identity_;
   std::string user_identity_;
-  // Owns the server store and user stores; see set_store_dir().
-  store_registry_ptr stores_{std::make_shared<store_registry>(default_store_dir())};
+  bool persistent_sandboxes_{true};
+  // Owns the server store and user stores; see set_home().
+  store_registry_ptr stores_{std::make_shared<store_registry>(wish_home{})};
 
   // Populated by on_session_created(context&); mirrors wish::client::on_connect().
   std::optional<bison::rmi::proxy::dynamic> template_proxy_;
@@ -366,6 +391,8 @@ class standalone : public bison::rmi::standalone {
   std::optional<bison::rmi::proxy::dynamic> automation_proxy_;
   // Unset for an anonymous session -- see set_user_identity().
   std::optional<bison::rmi::proxy::dynamic> user_store_proxy_;
+  std::optional<bison::rmi::proxy::dynamic> notifications_proxy_;
+  std::shared_ptr<bison::rmi::proxy::dynamic> media_proxy_;
   // Serializes describe_*()'s read-merge-write of schema entries.
   bison::synchronized<bool> describe_lock_{false};
 };

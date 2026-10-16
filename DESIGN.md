@@ -319,7 +319,9 @@ Registered as a bison class (`"__WishFileSystem"_key`) in the `"wish"` namespace
 | `delete` | `name` (string) | Remove a file from the session folder |
 | `upload_chunk` | `name`, `data`, `first` (bool), `eof` (bool) | Append one chunk of a large upload; see below |
 | `download_chunk` | `name`, `offset` (int32), `max_size` (int32) | Read one chunk of a large download at `offset`; see below |
-| `unpack` | `zip_name` (string), `dest` (string) | Extract a previously-uploaded zip archive into a sandboxed directory |
+| `unpack` | `zip_name` (string), `dest` (string) | Extract a previously-uploaded zip archive into a sandboxed directory (empty `dest`: the sandbox root) |
+| `package_current` | `name` (string), `version` (string) | Whether resource package `name` was last unpacked from a zip with this version token |
+| `commit_package` | `name`, `version`, `dest` (strings) | Unpack the uploaded zip of package `name` into `dest` and record `version` |
 
 Path traversal is blocked: `name` is validated to contain no directory separators or `..` components. The service only exposes files within `session.resource_dir`. The entire folder is removed when the client disconnects.
 
@@ -332,9 +334,39 @@ An `Image` element's `src` field is resolved relative to `session.resource_dir` 
 
 `bdg::wish::client` exposes this as overloaded `upload_file`/`download_file` (a `std::string` overload for the simple case, and `std::istream&`/`std::ostream&` overloads that drive the chunked protocol under the hood) plus `upload_package(dest_path, istream&)`, which uploads a zip via the chunked path and calls `unpack` — e.g. `upload_package("my_folder/my_package", zip_stream)` extracts into `my_folder/my_package/` in the sandbox.
 
+**Resource packages.** `client::sync_resource_package(name, local_zip, dest_path, on_progress, on_done)` keeps a client zip in sync with the sandbox so the client never tracks what the server already has. It runs on a background thread (`src/client/resource_sync.hpp`, shared by `client` and `standalone`):
+1. The client builds an opaque version token, `"<mtime ticks>:<size>"`, from the local zip and calls `package_current`. If it matches, it reports `(size, size)` progress and finishes (`uploaded == false`).
+2. Otherwise it streams the zip with `upload_chunk` to `private/packages/<name>.zip` and calls `commit_package`, which unpacks it (additive, like `unpack`) and writes the token to `private/packages/<name>.version`.
+
+Design choices:
+- The server only compares tokens for equality, so any change (including restoring an older zip) triggers an upload, and no clock conversion or 64-bit integers cross RMI.
+- The manifest lives in the sandbox, so it shares the extracted files' lifetime: one session with a temp sandbox, across sessions with a persistent one. A stale manifest can never claim files that were deleted with the sandbox.
+- `commit_package` removes the old manifest before unpacking and writes the new one only after success, so a failed or interrupted sync is retried.
+- `package_current` validates `name` (`[A-Za-z0-9_.-]`, 1-128 chars, no leading `.`; `file_service::package_path()`) before anything is uploaded.
+- `on_done` runs exactly once per call, success or failure. The C ABI (`wish_sync_resource_package`) maps both callbacks onto one `wish_resource_sync_fn` with a `wish_sync_state`, and the handle waits for pending syncs when the session callback returns, so no sync outlives the session.
+
+### Media playback (`src/media/`, `__WishMedia`)
+
+Optional (`WISH_ENABLE_MEDIA`, needs FFmpeg). Each session gets a
+`media::media_service` (`context::media_service`, class `__WishMedia`) whose
+`open` method creates named `media::media_player` RMI objects: each one plays a
+file from the session sandbox on the server, with FFmpeg decoding on its own
+thread and miniaudio driving the server's sound card. The client sends only
+commands, so no client library or binding links a media library. Video frames
+go to a `renderer::create_dynamic_texture()` texture, drawn by the `Video`
+widget or by `Image` with `src = "media://<name>"`. The render loop advances
+players with `media::pump_sessions()` on every iteration, not only on drawn
+frames, so an audio-only player still reports its end. Sandbox rules, the
+clock, A/V sync and limits are in [docs/media.md](docs/media.md).
+
+**Why the server plays the media.** wish clients may be headless services,
+other languages, or remote processes, and the screen and speakers are the
+server's. Keeping decoding server-side also keeps FFmpeg's LGPL code and its
+size out of every client.
+
 ### Persistent stores (`persistent_store`, `__WishUserStore`)
 
-`bdg::wish::persistent_store` is a thread-safe, file-backed map of entry name → `bison::dynamic`. Every mutation rewrites the file atomically. A `store_registry` (one per `wish::server`/`wish::standalone`, rooted at `set_store_dir()`, default `~/.wish`) owns the **server store** (`server_store.bison`) and one **user store** per authenticated identity (`users/<identity>.bison`). It hands out shared instances, so concurrent sessions of one identity never overwrite each other's in-memory copy.
+`bdg::wish::persistent_store` is a thread-safe, file-backed map of entry name → `bison::dynamic`. Every mutation rewrites the file atomically. A `store_registry` (one per `wish::server`/`wish::standalone`, built on the `wish_home` set by `set_home()`, default `~/.wish`; see [src/context/DESIGN.md](src/context/DESIGN.md)) owns the **server store** (`server/store.bison`) and one **user store** per authenticated identity (`users/<identity>/store.bison`). It hands out shared instances, so concurrent sessions of one identity never overwrite each other's in-memory copy.
 
 `server::on_session_created` gives every session `server_store`. `server::on_authenticated` gives an identified session its `user_store` plus a `user_store_service`, registered as `"__WishUserStore"` in the `"wish"` namespace, with methods `get`/`set`/`erase`/`keys`. Anonymous sessions get neither, and `find_singleton_service` throws for `__WishUserStore`, so `client::has_user_store()` reports `false`.
 
@@ -379,6 +411,7 @@ Thin wrapper around `bison::rmi::client`. Adds:
 - `upload_file(name, bytes)` / `download_file(name)` -- whole-file service calls.
 - `upload_file(name, istream&)` / `download_file(name, ostream&)` -- streaming, chunked equivalents for large files; never buffer the full content in memory.
 - `upload_package(dest_path, istream&)` -- streams a zip archive to the server and has it unpacked into `dest_path` inside the sandbox.
+- `sync_resource_package(name, local_zip, dest_path, on_progress, on_done)` -- background, cached zip sync: uploads and unpacks only when the local zip changed (see `file_service` above).
 - `set_style_preset(name)` -- apply a named ImGui theme preset (`”dark”`, `”light”`, `”classic”`).
 - `set_style(params)` -- merge per-field style overrides (floats, `#RRGGBBAA` color strings).
 - `get_style()` -- retrieve the current session style as a flat dynamic.

@@ -59,6 +59,35 @@ class TestClientLifecycle(unittest.TestCase):
         client.destroy()
 
 
+class TestResourceSync(unittest.TestCase):
+    def test_missing_zip_raises(self):
+        client = Client.tcp("127.0.0.1", 7070)
+        with self.assertRaises(WishError) as ctx:
+            client.sync_resource_package("test.py", "/nonexistent/wish_resources.zip")
+        self.assertEqual(ctx.exception.code, _n.WISH_ERR_EXCEPTION)
+        client.destroy()
+
+    def test_unconnected_sync_reports_failure_once(self):
+        import tempfile
+
+        done = []
+        with tempfile.TemporaryDirectory() as tmp:
+            zip_path = os.path.join(tmp, "pkg.zip")
+            with open(zip_path, "wb") as f:
+                f.write(b"not really a zip")
+            client = Client.tcp("127.0.0.1", 7070)
+            future = client.sync_resource_package(
+                "test.py", zip_path, on_done=lambda uploaded, error: done.append((uploaded, error))
+            )
+            with self.assertRaises(WishError):
+                future.result(timeout=10)
+            client.wait_resource_syncs()
+            client.destroy()
+        self.assertEqual(len(done), 1)
+        self.assertFalse(done[0][0])
+        self.assertTrue(done[0][1])
+
+
 class TestErrorMapping(unittest.TestCase):
     def test_wish_error_message(self):
         err = WishError(_n.WISH_ERR_NOT_FOUND, "proxy_get('x')")

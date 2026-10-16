@@ -114,11 +114,15 @@ class Server:
             only. Matches the ``wish server`` CLI's own flags/defaults. Also
             forwarded unchanged to the transport's own listen params -- e.g.
             ``cert_file``/``key_file``/etc. for a server created with
-            :meth:`tls`; ignored by every other transport. ``store_dir``
-            sets the directory holding the persistent server store and
-            per-user stores (default ``~/.wish``; see
-            docs/persistent-store.md). Clients connecting with a
-            ``username`` param get a user store; the rest are anonymous.
+            :meth:`tls`; ignored by every other transport. ``wish_home``
+            sets the root holding the server store and every user profile
+            (default ``$WISH_HOME``, else ``~/.wish``; see
+            src/context/DESIGN.md). ``persistent_sandboxes`` (bool) keeps
+            identified clients' sandboxes under it (default: on for pipe
+            servers and loopback binds, off otherwise). Clients connect as
+            their ``username`` param, else the OS user, unless they pass
+            ``anonymous=True``; anonymous clients get no user store and a
+            temporary sandbox.
         """
         ph = _n.build_params(self._lib, params) if params else None
         try:

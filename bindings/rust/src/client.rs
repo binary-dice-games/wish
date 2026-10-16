@@ -13,6 +13,7 @@ use std::panic::AssertUnwindSafe;
 use std::ptr;
 
 use crate::key::{key, key_or_zero};
+use crate::media::{MediaOptions, MediaPlayer};
 use crate::proxy::{Future, Proxy, RmiError};
 use crate::sys;
 use crate::value::{BisonError, Value};
@@ -65,7 +66,7 @@ fn error_message(code: i32) -> &'static str {
     }
 }
 
-fn check(
+pub(crate) fn check(
     rc: sys::wish_error,
     context: &str,
     client: sys::wish_client_handle,
@@ -85,7 +86,7 @@ fn last_error_string(client: sys::wish_client_handle) -> Option<String> {
     Some(unsafe { CStr::from_ptr(p).to_string_lossy().into_owned() })
 }
 
-fn cstr(s: &str) -> CString {
+pub(crate) fn cstr(s: &str) -> CString {
     CString::new(s).unwrap_or_else(|_| CString::new("").unwrap())
 }
 
@@ -650,6 +651,61 @@ impl Client {
         )
     }
 
+    // ── Resource packages ────────────────────────────────────────────────
+
+    /// Keeps a local zip of resources in sync with the session sandbox, in
+    /// the background.
+    ///
+    /// The server remembers which version (modified time and size) of
+    /// package `name` it last unpacked; the zip is uploaded and unpacked
+    /// into `dest_path` (`""`: the sandbox root) only if it changed.
+    /// Unpacking adds and overwrites files, never deletes any. `name` must
+    /// be unique, e.g. `"acme.game.level1"` (1-128 characters from
+    /// `[A-Za-z0-9_.-]`).
+    ///
+    /// Returns at once. `on_update` runs on a background thread for each
+    /// progress report and once more for the final one
+    /// ([`ResourceSyncStatus::finished`]). Fails if the sync cannot start
+    /// (e.g. a missing zip).
+    pub fn sync_resource_package<F>(
+        &self,
+        name: &str,
+        local_zip_path: &str,
+        dest_path: &str,
+        on_update: F,
+    ) -> Result<(), WishError>
+    where
+        F: FnMut(&ResourceSyncStatus) + Send + 'static,
+    {
+        let ctx: Box<SyncCtx> = Box::new(Box::new(on_update));
+        let user = Box::into_raw(ctx) as *mut c_void;
+        let rc = unsafe {
+            sys::wish_sync_resource_package(
+                self.handle,
+                cstr(name).as_ptr(),
+                cstr(local_zip_path).as_ptr(),
+                cstr(dest_path).as_ptr(),
+                Some(sync_trampoline),
+                user,
+            )
+        };
+        if rc != sys::WISH_OK {
+            // The callback never runs when the sync did not start.
+            drop(unsafe { Box::from_raw(user as *mut SyncCtx) });
+        }
+        check(rc, &format!("client.sync_resource_package({name:?})"), self.handle)
+    }
+
+    /// Blocks until every [`Client::sync_resource_package`] on this client
+    /// has finished. Must not be called from a sync callback.
+    pub fn wait_resource_syncs(&self) -> Result<(), WishError> {
+        check(
+            unsafe { sys::wish_wait_resource_syncs(self.handle) },
+            "client.wait_resource_syncs",
+            self.handle,
+        )
+    }
+
     // ── User store ───────────────────────────────────────────────────────
     //
     // A persistent store of named objects private to this session's
@@ -798,6 +854,86 @@ impl Client {
             _ => root.get_string("v").map(SettingValue::Text),
         }
         .unwrap_or(SettingValue::None))
+    }
+
+    // ── Media playback ───────────────────────────────────────────────────
+
+    /// True if the server plays media (it was built with FFmpeg).
+    pub fn has_media(&self) -> Result<bool, WishError> {
+        let mut avail: std::os::raw::c_int = 0;
+        check(
+            unsafe { sys::wish_media_available(self.handle, &mut avail) },
+            "client.has_media",
+            self.handle,
+        )?;
+        Ok(avail != 0)
+    }
+
+    /// Opens `path`, a file already uploaded to the session sandbox, as
+    /// player `name`. The server plays it; show its video with a `Video`
+    /// widget whose `player` is `name`. Absolute paths, `..` escapes and
+    /// URLs are refused. Fails with `WISH_ERR_UNAVAILABLE` when the server
+    /// plays no media.
+    pub fn open_media(&self, name: &str, path: &str, options: &MediaOptions) -> Result<MediaPlayer, WishError> {
+        let mut out: sys::wish_media_handle = ptr::null_mut();
+        let flags = if options.autoplay { sys::WISH_MEDIA_AUTOPLAY } else { 0 }
+            | if options.loop_ { sys::WISH_MEDIA_LOOP } else { 0 };
+        check(
+            unsafe {
+                sys::wish_media_open(
+                    self.handle,
+                    cstr(name).as_ptr(),
+                    cstr(path).as_ptr(),
+                    flags,
+                    options.volume,
+                    &mut out,
+                )
+            },
+            "client.open_media",
+            self.handle,
+        )?;
+        Ok(MediaPlayer::new(out, self.handle, name))
+    }
+
+    // ── Notifications ────────────────────────────────────────────────────
+
+    /// Shows a toast notification on the server's screen and returns its
+    /// id. `duration` of zero keeps it until dismissed. The server shows
+    /// this session's identity on it and keeps at most 4 per session.
+    /// Fails when the server shows no notifications or `title` is empty.
+    pub fn notify(&self, notification: &Notification) -> Result<u64, WishError> {
+        let mut id: u64 = 0;
+        let title = cstr(&notification.title);
+        let body = cstr(&notification.body);
+        let keys = cstr(&notification.keys);
+        let tag = cstr(&notification.tag);
+        let ms = i32::try_from(notification.duration.as_millis()).unwrap_or(i32::MAX);
+        check(
+            unsafe {
+                sys::wish_notify(
+                    self.handle,
+                    title.as_ptr(),
+                    body.as_ptr(),
+                    notification.kind as i32,
+                    keys.as_ptr(),
+                    ms,
+                    tag.as_ptr(),
+                    &mut id,
+                )
+            },
+            "client.notify",
+            self.handle,
+        )?;
+        Ok(id)
+    }
+
+    /// Removes one of this session's notifications early.
+    pub fn dismiss_notification(&self, id: u64) -> Result<(), WishError> {
+        check(
+            unsafe { sys::wish_notify_dismiss(self.handle, id) },
+            "client.dismiss_notification",
+            self.handle,
+        )
     }
 
     // ── Logging ──────────────────────────────────────────────────────────
@@ -996,6 +1132,76 @@ unsafe extern "C" fn desktop_session_trampoline<F>(
     }
 }
 
+/// State of a [`ResourceSyncStatus`] (`wish_sync_state`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResourceSyncState {
+    /// A chunk was uploaded; more reports follow.
+    Progress,
+    /// Final: the zip was uploaded and unpacked.
+    Uploaded,
+    /// Final: the server already had this version.
+    Cached,
+    /// Final: the sync failed; see [`ResourceSyncStatus::error`].
+    Failed,
+}
+
+/// One progress or completion report of [`Client::sync_resource_package`].
+#[derive(Debug, Clone)]
+pub struct ResourceSyncStatus {
+    /// Package name.
+    pub name: String,
+    /// Kind of report.
+    pub state: ResourceSyncState,
+    /// Bytes uploaded so far.
+    pub transferred: u64,
+    /// Size of the local zip.
+    pub total: u64,
+    /// Failure message when `state` is [`ResourceSyncState::Failed`].
+    pub error: Option<String>,
+}
+
+impl ResourceSyncStatus {
+    /// True for the last report (any state but `Progress`).
+    pub fn finished(&self) -> bool {
+        self.state != ResourceSyncState::Progress
+    }
+}
+
+type SyncCtx = Box<dyn FnMut(&ResourceSyncStatus) + Send>;
+
+/// C-callable `wish_resource_sync_fn`. `userdata` is a leaked
+/// `Box<SyncCtx>`, freed on the final report.
+unsafe extern "C" fn sync_trampoline(
+    _client: sys::wish_client_handle,
+    name: *const c_char,
+    state: std::os::raw::c_int,
+    transferred: u64,
+    total: u64,
+    error: *const c_char,
+    userdata: *mut c_void,
+) {
+    let state = match state {
+        sys::WISH_SYNC_PROGRESS => ResourceSyncState::Progress,
+        sys::WISH_SYNC_UPLOADED => ResourceSyncState::Uploaded,
+        sys::WISH_SYNC_CACHED => ResourceSyncState::Cached,
+        _ => ResourceSyncState::Failed,
+    };
+    let to_string = |p: *const c_char| (!p.is_null()).then(|| CStr::from_ptr(p).to_string_lossy().into_owned());
+    let status = ResourceSyncStatus {
+        name: to_string(name).unwrap_or_default(),
+        state,
+        transferred,
+        total,
+        error: to_string(error),
+    };
+    let ctx = &mut *(userdata as *mut SyncCtx);
+    // Unwinding into C++ is undefined behavior.
+    let _ = std::panic::catch_unwind(AssertUnwindSafe(|| ctx(&status)));
+    if status.finished() {
+        drop(Box::from_raw(userdata as *mut SyncCtx));
+    }
+}
+
 fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
     if let Some(s) = payload.downcast_ref::<&str>() {
         s.to_string()
@@ -1003,5 +1209,47 @@ fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
         s.clone()
     } else {
         "unknown panic payload".to_string()
+    }
+}
+
+// ── Notifications ────────────────────────────────────────────────────────────
+
+/// Severity of a notification: its accent color and icon (`WISH_NOTIFY_*`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum NotifyKind {
+    #[default]
+    Info = 0,
+    Success = 1,
+    Warning = 2,
+    Error = 3,
+}
+
+/// A toast notification for [`Client::notify`].
+#[derive(Debug, Clone)]
+pub struct Notification {
+    /// First line; required.
+    pub title: String,
+    /// Text under the title.
+    pub body: String,
+    pub kind: NotifyKind,
+    /// Key combination drawn as key caps, e.g. `"Ctrl+B"`.
+    pub keys: String,
+    /// How long it stays; zero keeps it until dismissed (at most 5 minutes).
+    pub duration: std::time::Duration,
+    /// Replaces this session's notification with the same tag.
+    pub tag: String,
+}
+
+impl Notification {
+    /// An info notification with `title`, shown for 6 seconds.
+    pub fn new(title: impl Into<String>) -> Self {
+        Self {
+            title: title.into(),
+            body: String::new(),
+            kind: NotifyKind::Info,
+            keys: String::new(),
+            duration: std::time::Duration::from_secs(6),
+            tag: String::new(),
+        }
     }
 }

@@ -118,12 +118,62 @@ class file_service : public bison::dynamic {
    * the staging archive at @p zip_name is deleted.
    *
    * @param zip_name  Previously uploaded zip file, relative to the sandbox.
-   * @param dest      Destination directory, relative to the sandbox.
+   * @param dest      Destination directory, relative to the sandbox. Empty
+   *                  extracts into the sandbox root.
    * @throws std::runtime_error if either path escapes the sandbox, the
    *         archive cannot be opened, or any entry would extract outside
    *         @p dest.
    */
   void unpack(const std::string& zip_name, const std::string& dest);
+
+  // ── Resource packages ────────────────────────────────────────────────────
+  //
+  // A resource package is a client zip that the client keeps in sync with
+  // the sandbox by name (client::sync_resource_package()). The server keeps
+  // one manifest per package, `private/packages/<name>.version`, holding the
+  // client-supplied version token of the last zip it unpacked. The manifest
+  // lives in the sandbox, so it has the same lifetime as the extracted files.
+
+  /**
+   * @brief Sandbox-relative base path of the resource package @p name.
+   *
+   * Pure: validates and formats only. The client uploads the zip to this
+   * path plus `".zip"`; the manifest is this path plus `".version"`.
+   *
+   * @param name  Package name: 1-128 characters from `[A-Za-z0-9_.-]`, not
+   *              starting with `.`.
+   * @return For example `"private/packages/acme.game.level1"`, or an empty
+   *         string if @p name is malformed.
+   */
+  static std::string package_path(const std::string& name);
+
+  /**
+   * @brief Whether the package @p name was last unpacked from a zip with
+   *        version token @p version.
+   * @param name     Package name; see package_path().
+   * @param version  Opaque client-side version token, compared for equality.
+   * @return `true` if the manifest exists and holds exactly @p version.
+   * @throws std::runtime_error if @p name is malformed.
+   */
+  bool package_current(const std::string& name, const std::string& version) const;
+
+  /**
+   * @brief Unpack the uploaded zip of package @p name into @p dest and
+   *        record @p version as its current version.
+   *
+   * The zip must already be uploaded to `package_path(name) + ".zip"`
+   * (normally via upload_chunk()). Extraction follows unpack(): it merges
+   * into @p dest and deletes the zip. The manifest is written only after a
+   * successful extraction, so a failed sync is retried next time.
+   *
+   * @param name     Package name; see package_path().
+   * @param version  Version token to record.
+   * @param dest     Destination directory, relative to the sandbox. Empty
+   *                 extracts into the sandbox root.
+   * @throws std::runtime_error if @p name is malformed, @p dest escapes the
+   *         sandbox, or extraction fails (see unpack()).
+   */
+  void commit_package(const std::string& name, const std::string& version, const std::string& dest);
 
   /**
    * @brief Return an indexed `dynamic` whose entries are the file names found

@@ -176,15 +176,15 @@ TEST_F(PersistentStoreTest, InvalidNamesAreRejected) {
 // ── store_registry ───────────────────────────────────────────────────────────
 
 TEST_F(PersistentStoreTest, RegistryUsesExpectedFileLayout) {
-  wish::store_registry registry{dir_};
+  wish::store_registry registry{wish::wish_home{dir_}};
   registry.server_store()->set("s", dynamic{});
   registry.user_store("alice")->set("u", dynamic{});
-  EXPECT_TRUE(std::filesystem::exists(dir_ / "server_store.bison"));
-  EXPECT_TRUE(std::filesystem::exists(dir_ / "users" / "alice.bison"));
+  EXPECT_TRUE(std::filesystem::exists(dir_ / "server" / "store.bison"));
+  EXPECT_TRUE(std::filesystem::exists(dir_ / "users" / "alice" / "store.bison"));
 }
 
 TEST_F(PersistentStoreTest, RegistrySharesStoresPerIdentity) {
-  wish::store_registry registry{dir_};
+  wish::store_registry registry{wish::wish_home{dir_}};
   EXPECT_EQ(registry.server_store(), registry.server_store());
   auto alice1 = registry.user_store("alice");
   auto alice2 = registry.user_store("alice");
@@ -194,13 +194,16 @@ TEST_F(PersistentStoreTest, RegistrySharesStoresPerIdentity) {
 }
 
 TEST_F(PersistentStoreTest, RegistryRejectsAnonymousAndUnsafeIdentities) {
-  wish::store_registry registry{dir_};
+  wish::store_registry registry{wish::wish_home{dir_}};
   EXPECT_EQ(registry.user_store(""), nullptr);
   EXPECT_EQ(registry.user_store("../evil"), nullptr);
   EXPECT_EQ(registry.user_store("a/b"), nullptr);
   EXPECT_EQ(registry.user_store("a\\b"), nullptr);
 }
 
-TEST(DefaultStoreDir, IsDotWishUnderHome) {
-  EXPECT_EQ(wish::default_store_dir().filename(), ".wish");
+TEST_F(PersistentStoreTest, RegistryNormalizesIdentities) {
+  wish::store_registry registry{wish::wish_home{dir_}};
+  EXPECT_EQ(registry.user_store("Alice"), registry.user_store("alice"));
+  registry.user_store("Alice")->set("u", dynamic{});
+  EXPECT_TRUE(std::filesystem::exists(dir_ / "users" / "alice" / "store.bison"));
 }
