@@ -34,4 +34,12 @@ rmi_error rmi_proxy_on_event_shim(
     rmi_proxy_event_fn handler,
     uintptr_t user);
 
+wish_error wish_sync_resource_package_shim(
+    wish_client_handle client,
+    const char* name,
+    const char* local_zip_path,
+    const char* dest_path,
+    wish_resource_sync_fn fn,
+    uintptr_t userdata);
+
 #endif /* WISH_GO_SHIM_H */

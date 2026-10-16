@@ -35,7 +35,7 @@ void client::run(bison::dynamic connect_params) {
 
 void client::on_connect() {
   template_proxy_ = instantiate("wish"_key, "__WishTemplate"_key).get();
-  fs_proxy_ = instantiate("wish"_key, "__WishFileSystem"_key).get();
+  fs_proxy_ = std::make_shared<bison::rmi::proxy::dynamic>(instantiate("wish"_key, "__WishFileSystem"_key).get());
   style_proxy_ = instantiate("wish"_key, "__WishStyle"_key).get();
   log_proxy_ = instantiate("wish"_key, "__WishLogger"_key).get();
   // Non-fatal: unlike the protocol handlers above (always present), a
@@ -307,6 +307,23 @@ client::upload_package(const std::string& dest_path, std::istream& package_strea
     args["zip_name"_key] = staging_name;
     args["dest"_key] = dest_path;
     fs_proxy_->call("unpack"_key, std::move(args)).get();
+  });
+}
+
+std::future<bool> client::sync_resource_package(
+    const std::string& name,
+    const std::filesystem::path& local_zip,
+    const std::string& dest_path,
+    transfer_progress_callback on_progress,
+    resource_sync_callback on_done) {
+  return std::async(std::launch::async, [fs = fs_proxy_, name, local_zip, dest_path, on_progress, on_done]() {
+    if (!fs) {
+      resource_sync_result result{name, false, "wish: client is not connected"};
+      if (on_done)
+        on_done(result);
+      throw std::logic_error(result.error);
+    }
+    return detail::run_resource_sync(*fs, name, local_zip, dest_path, on_progress, on_done);
   });
 }
 

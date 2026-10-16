@@ -41,7 +41,10 @@ pub mod settings;
 pub mod sys;
 pub mod value;
 
-pub use client::{list_apps_json, Client, Error, Notification, NotifyKind, QuitHandle, WishError};
+pub use client::{
+    list_apps_json, Client, Error, Notification, NotifyKind, QuitHandle, ResourceSyncState, ResourceSyncStatus,
+    WishError,
+};
 pub use key::key;
 pub use proxy::{Future, Proxy, RmiError};
 pub use settings::{SettingInfo, SettingOption, SettingValue, SettingsCategory};

@@ -71,6 +71,36 @@ public class ClientLifecycleTests
     }
 }
 
+public class ResourceSyncTests
+{
+    [Fact]
+    public void MissingZipThrows()
+    {
+        using var client = Client.Tcp("127.0.0.1", 7070);
+        var ex = Assert.Throws<WishException>(
+            () => client.SyncResourcePackage("test.cs", "/nonexistent/wish_resources.zip"));
+        Assert.Equal(WishErrorCode.Exception, ex.Code);
+    }
+
+    [Fact]
+    public async Task UnconnectedSyncFaultsTheTask()
+    {
+        var zipPath = Path.Combine(Path.GetTempPath(), $"wish_cs_{nameof(UnconnectedSyncFaultsTheTask)}.zip");
+        File.WriteAllBytes(zipPath, new byte[] { 1, 2, 3 });
+        try
+        {
+            using var client = Client.Tcp("127.0.0.1", 7070);
+            var task = client.SyncResourcePackage("test.cs", zipPath);
+            await Assert.ThrowsAsync<WishException>(() => task.WaitAsync(TimeSpan.FromSeconds(10)));
+            client.WaitResourceSyncs();
+        }
+        finally
+        {
+            File.Delete(zipPath);
+        }
+    }
+}
+
 public class ErrorMappingTests
 {
     [Fact]

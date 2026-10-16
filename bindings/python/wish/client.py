@@ -7,9 +7,11 @@ are plain ``bison.rmi.Proxy`` / ``bison.rmi.Future`` instances (``get`` /
 library re-exports the bison and RMI C ABIs alongside its own.
 """
 
+import concurrent.futures
 import ctypes
 import json
 import os
+import threading
 import time
 from typing import Any, Callable, List, Optional, Tuple
 
@@ -80,12 +82,16 @@ class Client:
     concurrent :meth:`quit` unblocks a :meth:`wait` inside it).
     """
 
-    __slots__ = ("_lib", "_handle", "_session_cb")
+    __slots__ = ("_lib", "_handle", "_session_cb", "_sync_cbs", "_sync_lock")
 
     def __init__(self, handle: int):
         self._lib = _n.get_lib()
         self._handle = _n.ClientHandle(handle)
         self._session_cb: Optional[ctypes._FuncPointer] = None
+        # ctypes callbacks of running resource syncs, kept alive until their
+        # final call.
+        self._sync_cbs: dict = {}
+        self._sync_lock = threading.Lock()
 
     @classmethod
     def tcp(cls, host: str, port: int) -> "Client":
@@ -489,6 +495,78 @@ class Client:
             f"upload_package({dest_path!r}, {local_zip_path!r})",
             self.last_error,
         )
+
+    # ── Resource packages ────────────────────────────────────────────────────
+
+    def sync_resource_package(
+        self,
+        name: str,
+        local_zip_path: str,
+        dest_path: str = "",
+        on_progress: Optional[Callable[[int, int], None]] = None,
+        on_done: Optional[Callable[[bool, Optional[str]], None]] = None,
+    ) -> "concurrent.futures.Future[bool]":
+        """Keep a local zip of resources in sync with the session sandbox,
+        in the background.
+
+        The server remembers which version (modified time and size) of
+        package ``name`` it last unpacked; the zip is uploaded and unpacked
+        into ``dest_path`` (``""``: the sandbox root) only if it changed.
+        Unpacking adds and overwrites files, never deletes any. ``name``
+        must be unique, e.g. ``"acme.game.level1"`` (1-128 characters from
+        ``[A-Za-z0-9_.-]``).
+
+        Returns at once. ``on_progress(transferred, total)`` and then
+        ``on_done(uploaded, error)`` (``error`` is ``None`` on success) run
+        on a background thread. The returned future resolves to ``True``
+        if the zip was uploaded, ``False`` if it was already current, or
+        holds a :class:`WishError`.
+
+        Raises :class:`WishError` if the sync cannot start (e.g. a missing
+        ``local_zip_path``).
+        """
+        future: "concurrent.futures.Future[bool]" = concurrent.futures.Future()
+        holder: list = []
+
+        def c_callback(_client_h, _name, state, transferred, total, error, _userdata) -> None:
+            try:
+                if state == _n.WISH_SYNC_PROGRESS:
+                    if on_progress:
+                        on_progress(transferred, total)
+                    return
+                message = error.decode() if error else None
+                if on_done:
+                    on_done(state == _n.WISH_SYNC_UPLOADED, message)
+            except Exception:  # C ABI boundary: cannot propagate
+                pass
+            if state == _n.WISH_SYNC_PROGRESS:
+                return
+            if state == _n.WISH_SYNC_FAILED:
+                future.set_exception(
+                    WishError(_n.WISH_ERR_EXCEPTION, f"sync_resource_package({name!r})", message or "")
+                )
+            else:
+                future.set_result(state == _n.WISH_SYNC_UPLOADED)
+            with self._sync_lock:
+                self._sync_cbs.pop(id(holder[0]), None)
+
+        cb = _n.ResourceSyncFn(c_callback)
+        holder.append(cb)
+        with self._sync_lock:
+            self._sync_cbs[id(cb)] = cb
+        rc = self._lib.wish_sync_resource_package(
+            self._handle, name.encode(), local_zip_path.encode(), dest_path.encode(), cb, None
+        )
+        if rc != _n.WISH_OK:
+            with self._sync_lock:
+                self._sync_cbs.pop(id(cb), None)
+        _check(rc, f"sync_resource_package({name!r}, {local_zip_path!r})", self.last_error)
+        return future
+
+    def wait_resource_syncs(self) -> None:
+        """Block until every :meth:`sync_resource_package` on this client
+        has finished. Must not be called from a sync callback."""
+        _check(self._lib.wish_wait_resource_syncs(self._handle), "wait_resource_syncs", self.last_error)
 
     # ── User store ───────────────────────────────────────────────────────────
     #

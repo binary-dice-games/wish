@@ -652,6 +652,86 @@ WISH_API wish_error wish_download_file_to_path(wish_client_handle client, const 
 WISH_API wish_error
 wish_upload_package_from_path(wish_client_handle client, const char* dest_path, const char* local_zip_path);
 
+/* ── Resource packages ────────────────────────────────────────────────────── */
+
+/** @brief Kind of a wish_resource_sync_fn call. */
+typedef enum wish_sync_state {
+  WISH_SYNC_PROGRESS = 0, /**< A chunk was uploaded; more calls follow. */
+  WISH_SYNC_UPLOADED = 1, /**< Final call: the zip was uploaded and unpacked. */
+  WISH_SYNC_CACHED = 2, /**< Final call: the server already had this version. */
+  WISH_SYNC_FAILED = 3 /**< Final call: the sync failed; see @p error. */
+} wish_sync_state;
+
+/**
+ * @brief Progress and completion callback of wish_sync_resource_package().
+ *
+ * Runs on a background thread: zero or more WISH_SYNC_PROGRESS calls, then
+ * exactly one final call (any other state). Must not block on the RMI
+ * dispatch thread.
+ *
+ * @param client       Session handle the sync was started on.
+ * @param name         Package name.
+ * @param state        Kind of call.
+ * @param transferred  Bytes uploaded so far (== @p total when CACHED).
+ * @param total        Size of the local zip.
+ * @param error        Failure message for WISH_SYNC_FAILED, else NULL.
+ *                     Valid only during the call.
+ * @param userdata     Value passed to wish_sync_resource_package().
+ */
+typedef void (*wish_resource_sync_fn)(
+    wish_client_handle client,
+    const char* name,
+    wish_sync_state state,
+    uint64_t transferred,
+    uint64_t total,
+    const char* error,
+    void* userdata);
+
+/**
+ * @brief Keep a local zip of resources in sync with the session sandbox,
+ *        in the background.
+ *
+ * Equivalent to `wish::client::sync_resource_package()`. The server
+ * remembers which version (modified time and size) of package @p name it
+ * last unpacked; the zip is uploaded and unpacked into @p dest_path only if
+ * it changed. Unpacking adds and overwrites files, never deletes any.
+ *
+ * Returns as soon as the sync has started; @p fn reports progress and
+ * completion. Pending syncs are waited for when the session callback
+ * returns, so none outlives the session.
+ *
+ * @param client          Active session handle.
+ * @param name            Unique package name, e.g. `"acme.game.level1"`:
+ *                        1-128 characters from `[A-Za-z0-9_.-]`, not
+ *                        starting with `.`.
+ * @param local_zip_path  Local zip archive.
+ * @param dest_path       Destination directory, relative to the sandbox;
+ *                        NULL or `""` unpacks into the sandbox root.
+ * @param fn              Progress/completion callback; may be NULL.
+ * @param userdata        Passed through to @p fn.
+ * @return WISH_OK once started; WISH_ERR_NULL for a NULL argument;
+ *         WISH_ERR_EXCEPTION if @p local_zip_path does not exist. Every
+ *         later failure is reported through @p fn as WISH_SYNC_FAILED.
+ */
+WISH_API wish_error wish_sync_resource_package(
+    wish_client_handle client,
+    const char* name,
+    const char* local_zip_path,
+    const char* dest_path,
+    wish_resource_sync_fn fn,
+    void* userdata);
+
+/**
+ * @brief Block until every sync started with wish_sync_resource_package()
+ *        on @p client has finished (its final callback has returned).
+ *
+ * Must not be called from a wish_resource_sync_fn (it would wait for
+ * itself).
+ *
+ * @return WISH_OK, or WISH_ERR_NULL if @p client is NULL.
+ */
+WISH_API wish_error wish_wait_resource_syncs(wish_client_handle client);
+
 /* ── User store ───────────────────────────────────────────────────────────── */
 
 /*

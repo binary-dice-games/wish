@@ -36,6 +36,14 @@ public enum WishErrorCode
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
 internal delegate void NativeSessionFn(nint client, nint userdata);
 
+/// <summary>
+/// <c>wish_resource_sync_fn</c>: void(*)(wish_client_handle client, const char* name,
+/// wish_sync_state state, uint64_t transferred, uint64_t total, const char* error, void* userdata).
+/// </summary>
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+internal delegate void NativeResourceSyncFn(
+    nint client, nint name, int state, ulong transferred, ulong total, nint error, nint userdata);
+
 internal static partial class Native
 {
     private const string LibName = "wish_client";
@@ -230,6 +238,15 @@ internal static partial class Native
 
     [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]
     public static partial int wish_upload_package_from_path(nint client, string destPath, string localZipPath);
+
+    // ── Resource packages ─────────────────────────────────────────────────────
+
+    [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]
+    public static partial int wish_sync_resource_package(
+        nint client, string name, string localZipPath, string destPath, nint fn, nint userdata);
+
+    [LibraryImport(LibName)]
+    public static partial int wish_wait_resource_syncs(nint client);
 
     // ── User store ────────────────────────────────────────────────────────────
 

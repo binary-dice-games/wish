@@ -18,6 +18,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <future>
 #include <istream>
@@ -292,6 +293,51 @@ class client : public bison::rmi::client {
       const std::string& dest_path,
       std::istream& package_stream,
       std::size_t chunk_size = kDefaultFileChunkSize);
+
+  /**
+   * @brief Keep a local zip of resources in sync with the session sandbox.
+   *
+   * The server remembers, per package @p name, the version of the zip it
+   * last unpacked (the local file's modified time and size). If
+   * @p local_zip changed since, or was never synced, it is uploaded in
+   * chunks and unpacked into @p dest_path; otherwise nothing is sent.
+   * Unpacking only adds and overwrites files; it never deletes any.
+   *
+   * Call it whenever the resources are needed, e.g. a game syncing a
+   * level's package just before the level starts. The memory lives in the
+   * sandbox, so it lasts for the session (or across sessions, with a
+   * persistent sandbox).
+   *
+   * The sync runs on a background thread. @p on_progress and @p on_done run
+   * on that thread too; they must not block on the RMI dispatch thread. Do
+   * not run two syncs of the same @p name at once.
+   *
+   * @param name        Unique package name, e.g. `"acme.game.level1"`:
+   *                    1-128 characters from `[A-Za-z0-9_.-]`, not starting
+   *                    with `.`. Prefix it with the app's name to avoid
+   *                    collisions with other apps.
+   * @param local_zip   Local zip archive. Read in the background; must stay
+   *                    in place until the sync completes.
+   * @param dest_path   Destination directory, relative to the sandbox.
+   *                    Empty (the default) unpacks into the sandbox root.
+   * @param on_progress Called after each uploaded chunk with bytes sent and
+   *                    the zip size; called once with `(size, size)` when
+   *                    the package was already current.
+   * @param on_done     Called exactly once when the sync finished, with
+   *                    whether the zip was uploaded or the error message.
+   * @return Future resolved with `true` if the zip was uploaded, `false` if
+   *         it was already current. Holds the exception on failure.
+   *         Dropping the future blocks until the sync completes.
+   * @throws std::runtime_error (via the resolved future) if @p local_zip
+   *         cannot be read, @p name is malformed, @p dest_path escapes the
+   *         sandbox, or the archive is corrupt.
+   */
+  [[nodiscard]] std::future<bool> sync_resource_package(
+      const std::string& name,
+      const std::filesystem::path& local_zip,
+      const std::string& dest_path = "",
+      transfer_progress_callback on_progress = nullptr,
+      resource_sync_callback on_done = nullptr);
 
   /**
    * @brief List file names found directly under a subdirectory of the
@@ -604,7 +650,10 @@ class client : public bison::rmi::client {
   // Per-session proxy handles.  Populated by on_connect() before on_session()
   // is called; cleared by on_disconnect().
   std::optional<bison::rmi::proxy::dynamic> template_proxy_;
-  std::optional<bison::rmi::proxy::dynamic> fs_proxy_;
+  // shared_ptr, not optional: a background sync_resource_package() keeps
+  // its own reference, so a disconnect mid-sync cannot destroy the proxy
+  // under it (its remaining calls fail instead).
+  std::shared_ptr<bison::rmi::proxy::dynamic> fs_proxy_;
   std::optional<bison::rmi::proxy::dynamic> style_proxy_;
   std::optional<bison::rmi::proxy::dynamic> log_proxy_;
   // Resolved non-fatally in on_connect() -- unset (rather than on_connect()

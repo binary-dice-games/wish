@@ -461,6 +461,17 @@ std::future<std::string> standalone::create_temp_dir(const std::string& qualifie
   });
 }
 
+std::future<bool> standalone::sync_resource_package(
+    const std::string& name,
+    const std::filesystem::path& local_zip,
+    const std::string& dest_path,
+    transfer_progress_callback on_progress,
+    resource_sync_callback on_done) {
+  return std::async(std::launch::async, [this, name, local_zip, dest_path, on_progress, on_done]() {
+    return detail::run_resource_sync(*fs_proxy_, name, local_zip, dest_path, on_progress, on_done);
+  });
+}
+
 std::future<std::vector<theme_info>> standalone::list_themes() {
   return std::async(std::launch::async, [this]() { return detail::list_themes_sync(*style_proxy_); });
 }

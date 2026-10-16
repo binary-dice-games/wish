@@ -78,6 +78,15 @@ class wish_standalone_session : public standalone, public wish_app_host {
     return standalone::create_temp_dir(qualified_app);
   }
 
+  std::future<bool> sync_resource_package(
+      const std::string& name,
+      const std::filesystem::path& local_zip,
+      const std::string& dest_path,
+      bdg::wish::transfer_progress_callback on_progress,
+      bdg::wish::resource_sync_callback on_done) override {
+    return standalone::sync_resource_package(name, local_zip, dest_path, std::move(on_progress), std::move(on_done));
+  }
+
   bool has_notifications() const override {
     return standalone::has_notifications();
   }

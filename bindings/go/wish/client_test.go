@@ -17,7 +17,10 @@ package wish
 import (
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -398,5 +401,41 @@ func TestDesktopStopFromAnotherGoroutineEndsTheLoop(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("RunOnDesktop did not return after StopDesktop")
+	}
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// Resource packages (no live server required)
+// ═════════════════════════════════════════════════════════════════════════
+
+func TestSyncResourcePackageMissingZipErrors(t *testing.T) {
+	client, err := NewTCPClient("127.0.0.1", 1)
+	must(t, err)
+	defer client.Destroy()
+	if err := client.SyncResourcePackage("test.go", "/nonexistent/wish_resources.zip", "", nil); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestUnconnectedSyncReportsOneFailure(t *testing.T) {
+	zip := filepath.Join(t.TempDir(), "pkg.zip")
+	must(t, os.WriteFile(zip, []byte("not really a zip"), 0o644))
+	client, err := NewTCPClient("127.0.0.1", 1)
+	must(t, err)
+	defer client.Destroy()
+
+	var mu sync.Mutex
+	var reports []ResourceSyncStatus
+	must(t, client.SyncResourcePackage("test.go", zip, "", func(s ResourceSyncStatus) {
+		mu.Lock()
+		defer mu.Unlock()
+		reports = append(reports, s)
+	}))
+	must(t, client.WaitResourceSyncs())
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(reports) != 1 || reports[0].State != ResourceSyncFailed || reports[0].Err == "" {
+		t.Fatalf("reports = %+v", reports)
 	}
 }

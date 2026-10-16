@@ -69,6 +69,19 @@ WISH_ERROR_MESSAGES = {
 # void (*wish_session_fn)(wish_client_handle client, void* userdata)
 SessionFn = ctypes.CFUNCTYPE(None, ClientHandle, ctypes.c_void_p)
 
+# wish_sync_state
+WISH_SYNC_PROGRESS = 0
+WISH_SYNC_UPLOADED = 1
+WISH_SYNC_CACHED = 2
+WISH_SYNC_FAILED = 3
+
+# void (*wish_resource_sync_fn)(wish_client_handle client, const char* name,
+#     wish_sync_state state, uint64_t transferred, uint64_t total,
+#     const char* error, void* userdata)
+ResourceSyncFn = ctypes.CFUNCTYPE(
+    None, ClientHandle, ctypes.c_char_p, ctypes.c_int, ctypes.c_uint64, ctypes.c_uint64, ctypes.c_char_p, ctypes.c_void_p
+)
+
 # ─── Library loading ────────────────────────────────────────────────────────
 
 
@@ -255,6 +268,18 @@ def _setup_wish_signatures(lib: ctypes.CDLL) -> None:
 
     lib.wish_upload_package_from_path.restype = Error
     lib.wish_upload_package_from_path.argtypes = [ClientHandle, ctypes.c_char_p, ctypes.c_char_p]
+
+    lib.wish_sync_resource_package.restype = Error
+    lib.wish_sync_resource_package.argtypes = [
+        ClientHandle,
+        ctypes.c_char_p,
+        ctypes.c_char_p,
+        ctypes.c_char_p,
+        ResourceSyncFn,
+        ctypes.c_void_p,
+    ]
+    lib.wish_wait_resource_syncs.restype = Error
+    lib.wish_wait_resource_syncs.argtypes = [ClientHandle]
 
     # ── Logging ──────────────────────────────────────────────────────────────
     # ── User store ───────────────────────────────────────────────────────────

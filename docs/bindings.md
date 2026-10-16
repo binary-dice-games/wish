@@ -97,6 +97,15 @@ has the server unpack it into `dest_path` inside the sandbox. See
 [DESIGN.md](../DESIGN.md#bdgwishfile_service) for the chunked-transfer
 protocol these build on.
 
+`sync_resource_package(name, local_zip_path, dest_path = "", on_update)`
+keeps a zip of resources in sync with the sandbox in the background: the
+zip is uploaded and unpacked only if it changed since the server last
+unpacked package `name`. `on_update(const resource_sync_status&)` runs on a
+background thread for each progress report and once more when
+`finished()` (`state` `WISH_SYNC_UPLOADED`, `WISH_SYNC_CACHED` or
+`WISH_SYNC_FAILED`); `wait_resource_syncs()` blocks until every sync is
+done.
+
 ### User store
 
 `has_user_store()` and `user_store_get` / `user_store_set` / `user_store_erase` / `user_store_keys` read and write the session's persistent, per-identity store of named objects. The session must connect with a `username` connect param; anonymous sessions get `WISH_ERR_UNAVAILABLE`. The API is the same shape in every binding: see the table in [docs/persistent-store.md](persistent-store.md#client-api). `describe_setting()` / `describe_settings_category()` (`DescribeSetting`, `describeSetting`, ...) describe settings kept there for the Settings tool, and `read_setting()` (`ReadSetting`, `readSetting`, ...) returns a setting's value or its default: see [docs/settings.md](settings.md).
@@ -319,6 +328,23 @@ archive and has the server unpack it into `dest_path` inside the sandbox.
 See [DESIGN.md](../DESIGN.md#bdgwishfile_service) for the chunked-transfer
 protocol these build on.
 
+`Client.sync_resource_package(name, local_zip_path, dest_path="",
+on_progress=None, on_done=None)` keeps a zip of resources in sync with the
+sandbox in the background: the zip is uploaded and unpacked only if it
+changed since the server last unpacked package `name`. It returns a
+`concurrent.futures.Future` resolving to `True` (uploaded) or `False`
+(already current); `on_progress(transferred, total)` and
+`on_done(uploaded, error)` run on a background thread.
+`wait_resource_syncs()` blocks until every sync is done.
+
+```python
+def session(client):
+    future = client.sync_resource_package(
+        "acme.game.level1", "level1.zip", "levels/1",
+        on_progress=lambda sent, total: print(f"{sent}/{total}"))
+    future.result()   # level resources are in place
+```
+
 ### User store
 
 `has_user_store()` and `user_store_get` / `user_store_set` / `user_store_erase` / `user_store_keys` read and write the session's persistent, per-identity store of named objects. The session must connect with a `username` connect param; anonymous sessions get `WISH_ERR_UNAVAILABLE`. The API is the same shape in every binding: see the table in [docs/persistent-store.md](persistent-store.md#client-api). `describe_setting()` / `describe_settings_category()` (`DescribeSetting`, `describeSetting`, ...) describe settings kept there for the Settings tool, and `read_setting()` (`ReadSetting`, `readSetting`, ...) returns a setting's value or its default: see [docs/settings.md](settings.md).
@@ -475,6 +501,16 @@ client.Run(c =>
     c.Wait();                           // blocks until an event handler calls c.Quit()
 });
 ```
+
+### Resource packages
+
+`Client.SyncResourcePackage(name, localZipPath, destPath = "", progress)`
+keeps a zip of resources in sync with the sandbox in the background: the
+zip is uploaded and unpacked only if it changed since the server last
+unpacked package `name`. It returns a `Task<bool>` (`true`: uploaded,
+`false`: already current; faulted with a `WishException` on failure) and
+reports progress through an optional `IProgress<(ulong Transferred, ulong
+Total)>`. `WaitResourceSyncs()` blocks until every sync is done.
 
 ### TLS
 
@@ -660,6 +696,14 @@ stream a local file's content in chunks instead of buffering it in memory
 has the server unpack it into `dest_path` inside the sandbox. See
 [DESIGN.md](../DESIGN.md#bdgwishfile_service) for the chunked-transfer
 protocol these build on.
+
+`sync_resource_package(name, local_zip_path, dest_path, on_update)` keeps a
+zip of resources in sync with the sandbox in the background: the zip is
+uploaded and unpacked only if it changed since the server last unpacked
+package `name`. `on_update(&ResourceSyncStatus)` (`FnMut + Send`) runs on a
+background thread for each progress report and once more when
+`finished()` (`ResourceSyncState::Uploaded`, `Cached` or `Failed`);
+`wait_resource_syncs()` blocks until every sync is done.
 
 ### TLS
 
@@ -876,6 +920,15 @@ stream a local file's content in chunks instead of buffering it in memory
 the server unpack it into `destPath` inside the sandbox. See
 [DESIGN.md](../DESIGN.md#bdgwishfile_service) for the chunked-transfer
 protocol these build on.
+
+`SyncResourcePackage(name, localZipPath, destPath, onUpdate)` keeps a zip
+of resources in sync with the sandbox in the background: the zip is
+uploaded and unpacked only if it changed since the server last unpacked
+package `name`. `onUpdate(ResourceSyncStatus)` (may be nil) runs on a
+background (non-Go) thread for each progress report and once more
+when `Finished()` (`ResourceSyncUploaded`, `ResourceSyncCached` or
+`ResourceSyncFailed`); `WaitResourceSyncs()` blocks until every sync is
+done.
 
 ### TLS
 
@@ -1111,7 +1164,10 @@ the example app on an emulator, alongside a `wish server` to connect to.
   `wish_download_file_to_path`/`wish_upload_package_from_path`) aren't
   bound; Android's scoped-storage model makes a raw filesystem path a poor
   fit for this binding's API compared to a `byte[]`/`Uri` the caller already
-  has in hand.
+  has in hand. The exception is `syncResourcePackage(name, localZipPath,
+  destPath, listener)` (with `waitResourceSyncs()`), which takes a path the
+  app controls (e.g. a zip copied to its cache directory) because the
+  server-side version check needs the file's modified time.
 - **Native automation** (`wish_automation_*`) isn't bound -- it's desktop
   dev/test tooling for the SDL3 renderer (see the Python binding's "Native
   automation" section above), not something a deployed Android client

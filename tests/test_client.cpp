@@ -651,6 +651,178 @@ TEST(ClientTest, UploadPackageExtractsFilesIntoDestFolder) {
   std::filesystem::remove(zip_path);
 }
 
+// ── sync_resource_package ────────────────────────────────────────────────────
+
+namespace {
+
+// Temp file name unique to the running test (ctest runs tests in parallel).
+std::filesystem::path test_temp_path(const std::string& suffix) {
+  auto* info = ::testing::UnitTest::GetInstance()->current_test_info();
+  return std::filesystem::temp_directory_path() /
+      (std::string{"wish_"} + info->test_suite_name() + "_" + info->name() + suffix);
+}
+
+struct sync_record {
+  bool uploaded = false;
+  std::vector<std::pair<std::uint64_t, std::uint64_t>> progress;
+  std::vector<wish::resource_sync_result> done;
+};
+
+// Runs one sync, recording progress and completion, and returns the record.
+sync_record
+run_sync(wish::client& c, const std::string& name, const std::filesystem::path& zip, const std::string& dest) {
+  sync_record r;
+  auto future = c.sync_resource_package(
+      name,
+      zip,
+      dest,
+      [&r](std::uint64_t sent, std::uint64_t total) { r.progress.emplace_back(sent, total); },
+      [&r](const wish::resource_sync_result& result) { r.done.push_back(result); });
+  r.uploaded = future.get();
+  return r;
+}
+
+} // namespace
+
+TEST(ClientTest, SyncResourcePackageUploadsOnlyWhenChanged) {
+  memory_server_transport transport;
+  wish::server srv{transport, std::make_unique<wish::null_renderer>()};
+  srv.start();
+
+  auto zip_path = test_temp_path(".zip");
+  make_test_zip(zip_path, {{"a.txt", "alpha"}, {"sub/b.txt", "beta"}});
+  auto zip_size = static_cast<std::uint64_t>(std::filesystem::file_size(zip_path));
+
+  class test_client : public wish::client {
+   public:
+    using wish::client::client;
+    std::filesystem::path zip_path;
+    sync_record first, second, third;
+    std::vector<std::string> root_names;
+    std::string b_content;
+
+   protected:
+    void on_session() override {
+      first = run_sync(*this, "test.level1", zip_path, "");
+      root_names = list_files().get();
+      b_content = download_file("sub/b.txt").get();
+
+      second = run_sync(*this, "test.level1", zip_path, "");
+
+      std::filesystem::last_write_time(zip_path, std::filesystem::last_write_time(zip_path) + std::chrono::seconds(10));
+      third = run_sync(*this, "test.level1", zip_path, "");
+    }
+  };
+
+  test_client c{transport.connect()};
+  c.zip_path = zip_path;
+  c.run();
+
+  EXPECT_TRUE(c.first.uploaded);
+  ASSERT_FALSE(c.first.progress.empty());
+  EXPECT_EQ(c.first.progress.back(), std::make_pair(zip_size, zip_size));
+  ASSERT_EQ(c.first.done.size(), 1u);
+  EXPECT_TRUE(c.first.done[0].uploaded);
+  EXPECT_EQ(c.first.done[0].name, "test.level1");
+  EXPECT_TRUE(c.first.done[0].error.empty());
+  std::unordered_set<std::string> found(c.root_names.begin(), c.root_names.end());
+  EXPECT_NE(found.find("a.txt"), found.end());
+  EXPECT_EQ(c.b_content, "beta");
+
+  // Unchanged: nothing sent, a single (size, size) progress report.
+  EXPECT_FALSE(c.second.uploaded);
+  ASSERT_EQ(c.second.progress.size(), 1u);
+  EXPECT_EQ(c.second.progress[0], std::make_pair(zip_size, zip_size));
+  ASSERT_EQ(c.second.done.size(), 1u);
+  EXPECT_FALSE(c.second.done[0].uploaded);
+
+  // Touched: uploaded again.
+  EXPECT_TRUE(c.third.uploaded);
+  srv.stop();
+  std::filesystem::remove(zip_path);
+}
+
+TEST(ClientTest, SyncResourcePackageExtractsIntoDestPath) {
+  memory_server_transport transport;
+  wish::server srv{transport, std::make_unique<wish::null_renderer>()};
+  srv.start();
+
+  auto zip_path = test_temp_path(".zip");
+  make_test_zip(zip_path, {{"a.txt", "alpha"}});
+
+  class test_client : public wish::client {
+   public:
+    using wish::client::client;
+    std::filesystem::path zip_path;
+    std::string content;
+
+   protected:
+    void on_session() override {
+      (void)sync_resource_package("test.dest", zip_path, "levels/one").get();
+      content = download_file("levels/one/a.txt").get();
+    }
+  };
+
+  test_client c{transport.connect()};
+  c.zip_path = zip_path;
+  c.run();
+
+  EXPECT_EQ(c.content, "alpha");
+  srv.stop();
+  std::filesystem::remove(zip_path);
+}
+
+TEST(ClientTest, SyncResourcePackageReportsFailuresOnce) {
+  memory_server_transport transport;
+  wish::server srv{transport, std::make_unique<wish::null_renderer>()};
+  srv.start();
+
+  auto corrupt_path = test_temp_path("_corrupt.zip");
+  {
+    std::ofstream out(corrupt_path, std::ios::binary);
+    out << "this is not a zip file";
+  }
+
+  class test_client : public wish::client {
+   public:
+    using wish::client::client;
+    std::filesystem::path corrupt_path;
+    std::vector<wish::resource_sync_result> missing_done, corrupt_done, bad_name_done;
+    bool missing_threw = false, corrupt_threw = false, bad_name_threw = false;
+
+   protected:
+    void on_session() override {
+      auto run = [this](const std::string& name, const std::filesystem::path& zip, auto& done, bool& threw) {
+        auto f = sync_resource_package(
+            name, zip, "", nullptr, [&done](const wish::resource_sync_result& r) { done.push_back(r); });
+        try {
+          f.get();
+        } catch (const std::exception&) {
+          threw = true;
+        }
+      };
+      run("test.missing", corrupt_path.string() + ".does_not_exist", missing_done, missing_threw);
+      run("test.corrupt", corrupt_path, corrupt_done, corrupt_threw);
+      run("../escape", corrupt_path, bad_name_done, bad_name_threw);
+    }
+  };
+
+  test_client c{transport.connect()};
+  c.corrupt_path = corrupt_path;
+  c.run();
+
+  for (auto* done : {&c.missing_done, &c.corrupt_done, &c.bad_name_done}) {
+    ASSERT_EQ(done->size(), 1u);
+    EXPECT_FALSE((*done)[0].error.empty());
+    EXPECT_FALSE((*done)[0].uploaded);
+  }
+  EXPECT_TRUE(c.missing_threw);
+  EXPECT_TRUE(c.corrupt_threw);
+  EXPECT_TRUE(c.bad_name_threw);
+  srv.stop();
+  std::filesystem::remove(corrupt_path);
+}
+
 // ── Disconnect propagation ────────────────────────────────────────────────────
 //
 // When the server goes away (process exit, srv.stop(), etc.), on_disconnect()

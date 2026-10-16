@@ -186,6 +186,14 @@ class standalone : public bison::rmi::standalone {
   /// @copydoc bdg::wish::client::create_temp_dir
   std::future<std::string> create_temp_dir(const std::string& qualified_app);
 
+  /// @copydoc bdg::wish::client::sync_resource_package
+  [[nodiscard]] std::future<bool> sync_resource_package(
+      const std::string& name,
+      const std::filesystem::path& local_zip,
+      const std::string& dest_path = "",
+      transfer_progress_callback on_progress = nullptr,
+      resource_sync_callback on_done = nullptr);
+
   /// @copydoc bdg::wish::client::set_style_preset
   std::future<void> set_style_preset(const std::string& name);
 

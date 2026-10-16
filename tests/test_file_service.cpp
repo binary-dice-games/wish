@@ -457,6 +457,107 @@ TEST_F(FileServiceTest, UnpackThrowsOnCorruptArchive) {
   EXPECT_THROW(fs().unpack("not_a_zip.zip", "dest5"), std::runtime_error);
 }
 
+TEST_F(FileServiceTest, UnpackEmptyDestExtractsIntoSandboxRoot) {
+  auto zip_path = sess().resource_dir / "staging_root.zip";
+  make_test_zip(zip_path, {{"root_a.txt", "alpha"}});
+  fs().upload("pkg_root.zip", read_binary_file(zip_path));
+
+  fs().unpack("pkg_root.zip", "");
+
+  EXPECT_EQ(fs().download("root_a.txt"), "alpha");
+}
+
+// ── Resource packages ────────────────────────────────────────────────────────
+
+namespace {
+
+// Lands a zip at the package's staging path, as client::sync_resource_package() does.
+void stage_package(
+    bdg::wish::file_service& fs,
+    const std::filesystem::path& scratch,
+    const std::string& name,
+    const std::vector<std::pair<std::string, std::string>>& entries) {
+  auto zip_path = scratch / (name + ".src.zip");
+  make_test_zip(zip_path, entries);
+  fs.upload(bdg::wish::file_service::package_path(name) + ".zip", read_binary_file(zip_path));
+  std::filesystem::remove(zip_path);
+}
+
+} // namespace
+
+TEST_F(FileServiceTest, PackagePathValidatesName) {
+  EXPECT_EQ(bdg::wish::file_service::package_path("acme.game.level1"), "private/packages/acme.game.level1");
+  EXPECT_EQ(bdg::wish::file_service::package_path("a-b_C9"), "private/packages/a-b_C9");
+  EXPECT_EQ(bdg::wish::file_service::package_path(""), "");
+  EXPECT_EQ(bdg::wish::file_service::package_path(".hidden"), "");
+  EXPECT_EQ(bdg::wish::file_service::package_path(".."), "");
+  EXPECT_EQ(bdg::wish::file_service::package_path("a/b"), "");
+  EXPECT_EQ(bdg::wish::file_service::package_path("a\\b"), "");
+  EXPECT_EQ(bdg::wish::file_service::package_path(std::string(128, 'x')), "private/packages/" + std::string(128, 'x'));
+  EXPECT_EQ(bdg::wish::file_service::package_path(std::string(129, 'x')), "");
+}
+
+TEST_F(FileServiceTest, PackageCurrentTracksCommittedVersion) {
+  EXPECT_FALSE(fs().package_current("pkg", "1:10"));
+
+  stage_package(fs(), sess().resource_dir, "pkg", {{"a.txt", "alpha"}});
+  fs().commit_package("pkg", "1:10", "");
+
+  EXPECT_TRUE(fs().package_current("pkg", "1:10"));
+  EXPECT_FALSE(fs().package_current("pkg", "2:10"));
+  EXPECT_FALSE(fs().package_current("other", "1:10"));
+}
+
+TEST_F(FileServiceTest, CommitPackageExtractsToRootOrDest) {
+  stage_package(fs(), sess().resource_dir, "root_pkg", {{"r.txt", "root"}});
+  fs().commit_package("root_pkg", "v", "");
+  EXPECT_EQ(fs().download("r.txt"), "root");
+
+  stage_package(fs(), sess().resource_dir, "sub_pkg", {{"s.txt", "sub"}});
+  fs().commit_package("sub_pkg", "v", "assets/level1");
+  EXPECT_EQ(fs().download("assets/level1/s.txt"), "sub");
+
+  // The staging zips are gone.
+  EXPECT_FALSE(std::filesystem::exists(sess().resource_dir / "private/packages/root_pkg.zip"));
+  EXPECT_FALSE(std::filesystem::exists(sess().resource_dir / "private/packages/sub_pkg.zip"));
+}
+
+TEST_F(FileServiceTest, CommitPackageIsAdditive) {
+  fs().upload("keep.txt", "keep me");
+  fs().upload("over.txt", "old");
+
+  stage_package(fs(), sess().resource_dir, "add", {{"over.txt", "new"}, {"added.txt", "added"}});
+  fs().commit_package("add", "v1", "");
+
+  EXPECT_EQ(fs().download("keep.txt"), "keep me");
+  EXPECT_EQ(fs().download("over.txt"), "new");
+  EXPECT_EQ(fs().download("added.txt"), "added");
+}
+
+TEST_F(FileServiceTest, CommitPackageFailureLeavesPackageNotCurrent) {
+  stage_package(fs(), sess().resource_dir, "pkg", {{"a.txt", "alpha"}});
+  fs().commit_package("pkg", "v1", "");
+  ASSERT_TRUE(fs().package_current("pkg", "v1"));
+
+  fs().upload(bdg::wish::file_service::package_path("pkg") + ".zip", "this is not a zip file");
+  EXPECT_THROW(fs().commit_package("pkg", "v2", ""), std::runtime_error);
+
+  EXPECT_FALSE(fs().package_current("pkg", "v1"));
+  EXPECT_FALSE(fs().package_current("pkg", "v2"));
+}
+
+TEST_F(FileServiceTest, PackageMethodsRejectInvalidNames) {
+  EXPECT_THROW(fs().package_current("../x", "v"), std::runtime_error);
+  EXPECT_THROW(fs().package_current("", "v"), std::runtime_error);
+  EXPECT_THROW(fs().commit_package("a/b", "v", ""), std::runtime_error);
+}
+
+TEST_F(FileServiceTest, CommitPackageRejectsEscapingDest) {
+  stage_package(fs(), sess().resource_dir, "pkg", {{"a.txt", "alpha"}});
+  EXPECT_THROW(fs().commit_package("pkg", "v", "../outside"), std::runtime_error);
+  EXPECT_FALSE(fs().package_current("pkg", "v"));
+}
+
 TEST_F(FileServiceTest, UnpackPathTraversalOnZipNameThrows) {
   EXPECT_THROW(fs().unpack("../evil.zip", "dest6"), std::runtime_error);
 }

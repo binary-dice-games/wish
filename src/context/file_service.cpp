@@ -135,6 +135,18 @@ file_service::file_service(dynamic&& base, std::filesystem::path resource_dir)
               unpack(p.as<std::string>("zip_name"_key), p.as<std::string>("dest"_key));
               return dynamic{};
             }});
+  addMethod("package_current"_key, bison::method{[this](dynamic& /*self*/, const dynamic& p) -> dynamic {
+              dynamic result;
+              result["result"_key] = package_current(p.as<std::string>("name"_key), p.as<std::string>("version"_key));
+              return result;
+            }});
+  addMethod("commit_package"_key, bison::method{[this](dynamic& /*self*/, const dynamic& p) -> dynamic {
+              std::string dest;
+              if (const auto* f = p.findField("dest"_key); f && f->is<std::string>())
+                dest = f->as<std::string>();
+              commit_package(p.as<std::string>("name"_key), p.as<std::string>("version"_key), dest);
+              return dynamic{};
+            }});
 }
 
 std::filesystem::path
@@ -317,7 +329,8 @@ file_service::chunk file_service::download_chunk(const std::string& name, int32_
 
 void file_service::unpack(const std::string& zip_name, const std::string& dest) {
   auto zip_path = resolve_path(zip_name);
-  auto dest_path = resolve_path(dest);
+  // Empty dest extracts into the sandbox root (resolve_path() rejects "").
+  auto dest_path = dest.empty() ? resource_dir_ : resolve_path(dest);
 
   mz_zip_archive zip{};
   if (!mz_zip_reader_init_file(&zip, zip_path.string().c_str(), 0)) {
@@ -361,6 +374,49 @@ void file_service::unpack(const std::string& zip_name, const std::string& dest) 
 
   mz_zip_reader_end(&zip);
   std::filesystem::remove(zip_path, ec);
+}
+
+// ── Resource packages ───────────────────────────────────────────────────────
+
+std::string file_service::package_path(const std::string& name) {
+  constexpr std::size_t kMaxName = 128;
+  if (name.empty() || name.size() > kMaxName || name.front() == '.')
+    return {};
+  for (unsigned char c : name) {
+    if (!std::isalnum(c) && c != '_' && c != '-' && c != '.')
+      return {};
+  }
+  return "private/packages/" + name;
+}
+
+bool file_service::package_current(const std::string& name, const std::string& version) const {
+  auto base = package_path(name);
+  if (base.empty())
+    throw std::runtime_error("wish::file_service: invalid package name: " + name);
+  std::ifstream in(resolve_path(base + ".version"), std::ios::binary);
+  if (!in)
+    return false;
+  std::string stored{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>{}};
+  return stored == version;
+}
+
+void file_service::commit_package(const std::string& name, const std::string& version, const std::string& dest) {
+  auto base = package_path(name);
+  if (base.empty())
+    throw std::runtime_error("wish::file_service: invalid package name: " + name);
+
+  // Drop the old manifest first: if extraction fails halfway, the package
+  // must not look current.
+  auto manifest = resolve_path(base + ".version");
+  std::error_code ec;
+  std::filesystem::remove(manifest, ec);
+
+  unpack(base + ".zip", dest);
+
+  std::ofstream out(manifest, std::ios::binary | std::ios::trunc);
+  if (!out)
+    throw std::runtime_error("wish::file_service: cannot write package manifest: " + name);
+  out.write(version.data(), static_cast<std::streamsize>(version.size()));
 }
 
 bison::dynamic_ptr file_service::list(const std::string& path) const {

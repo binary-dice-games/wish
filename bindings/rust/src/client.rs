@@ -650,6 +650,61 @@ impl Client {
         )
     }
 
+    // ── Resource packages ────────────────────────────────────────────────
+
+    /// Keeps a local zip of resources in sync with the session sandbox, in
+    /// the background.
+    ///
+    /// The server remembers which version (modified time and size) of
+    /// package `name` it last unpacked; the zip is uploaded and unpacked
+    /// into `dest_path` (`""`: the sandbox root) only if it changed.
+    /// Unpacking adds and overwrites files, never deletes any. `name` must
+    /// be unique, e.g. `"acme.game.level1"` (1-128 characters from
+    /// `[A-Za-z0-9_.-]`).
+    ///
+    /// Returns at once. `on_update` runs on a background thread for each
+    /// progress report and once more for the final one
+    /// ([`ResourceSyncStatus::finished`]). Fails if the sync cannot start
+    /// (e.g. a missing zip).
+    pub fn sync_resource_package<F>(
+        &self,
+        name: &str,
+        local_zip_path: &str,
+        dest_path: &str,
+        on_update: F,
+    ) -> Result<(), WishError>
+    where
+        F: FnMut(&ResourceSyncStatus) + Send + 'static,
+    {
+        let ctx: Box<SyncCtx> = Box::new(Box::new(on_update));
+        let user = Box::into_raw(ctx) as *mut c_void;
+        let rc = unsafe {
+            sys::wish_sync_resource_package(
+                self.handle,
+                cstr(name).as_ptr(),
+                cstr(local_zip_path).as_ptr(),
+                cstr(dest_path).as_ptr(),
+                Some(sync_trampoline),
+                user,
+            )
+        };
+        if rc != sys::WISH_OK {
+            // The callback never runs when the sync did not start.
+            drop(unsafe { Box::from_raw(user as *mut SyncCtx) });
+        }
+        check(rc, &format!("client.sync_resource_package({name:?})"), self.handle)
+    }
+
+    /// Blocks until every [`Client::sync_resource_package`] on this client
+    /// has finished. Must not be called from a sync callback.
+    pub fn wait_resource_syncs(&self) -> Result<(), WishError> {
+        check(
+            unsafe { sys::wish_wait_resource_syncs(self.handle) },
+            "client.wait_resource_syncs",
+            self.handle,
+        )
+    }
+
     // ── User store ───────────────────────────────────────────────────────
     //
     // A persistent store of named objects private to this session's
@@ -1034,6 +1089,76 @@ unsafe extern "C" fn desktop_session_trampoline<F>(
     if let Err(payload) = result {
         ctx.panic = Some(panic_message(payload));
         sys::wish_client_desktop_stop(client);
+    }
+}
+
+/// State of a [`ResourceSyncStatus`] (`wish_sync_state`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResourceSyncState {
+    /// A chunk was uploaded; more reports follow.
+    Progress,
+    /// Final: the zip was uploaded and unpacked.
+    Uploaded,
+    /// Final: the server already had this version.
+    Cached,
+    /// Final: the sync failed; see [`ResourceSyncStatus::error`].
+    Failed,
+}
+
+/// One progress or completion report of [`Client::sync_resource_package`].
+#[derive(Debug, Clone)]
+pub struct ResourceSyncStatus {
+    /// Package name.
+    pub name: String,
+    /// Kind of report.
+    pub state: ResourceSyncState,
+    /// Bytes uploaded so far.
+    pub transferred: u64,
+    /// Size of the local zip.
+    pub total: u64,
+    /// Failure message when `state` is [`ResourceSyncState::Failed`].
+    pub error: Option<String>,
+}
+
+impl ResourceSyncStatus {
+    /// True for the last report (any state but `Progress`).
+    pub fn finished(&self) -> bool {
+        self.state != ResourceSyncState::Progress
+    }
+}
+
+type SyncCtx = Box<dyn FnMut(&ResourceSyncStatus) + Send>;
+
+/// C-callable `wish_resource_sync_fn`. `userdata` is a leaked
+/// `Box<SyncCtx>`, freed on the final report.
+unsafe extern "C" fn sync_trampoline(
+    _client: sys::wish_client_handle,
+    name: *const c_char,
+    state: std::os::raw::c_int,
+    transferred: u64,
+    total: u64,
+    error: *const c_char,
+    userdata: *mut c_void,
+) {
+    let state = match state {
+        sys::WISH_SYNC_PROGRESS => ResourceSyncState::Progress,
+        sys::WISH_SYNC_UPLOADED => ResourceSyncState::Uploaded,
+        sys::WISH_SYNC_CACHED => ResourceSyncState::Cached,
+        _ => ResourceSyncState::Failed,
+    };
+    let to_string = |p: *const c_char| (!p.is_null()).then(|| CStr::from_ptr(p).to_string_lossy().into_owned());
+    let status = ResourceSyncStatus {
+        name: to_string(name).unwrap_or_default(),
+        state,
+        transferred,
+        total,
+        error: to_string(error),
+    };
+    let ctx = &mut *(userdata as *mut SyncCtx);
+    // Unwinding into C++ is undefined behavior.
+    let _ = std::panic::catch_unwind(AssertUnwindSafe(|| ctx(&status)));
+    if status.finished() {
+        drop(Box::from_raw(userdata as *mut SyncCtx));
     }
 }
 

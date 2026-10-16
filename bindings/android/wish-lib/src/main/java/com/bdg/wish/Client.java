@@ -213,6 +213,43 @@ public final class Client implements AutoCloseable {
     return nativeDownloadFile(handle, name);
   }
 
+  // ─── Resource packages ────────────────────────────────────────────────────
+
+  /** {@link ResourceSyncListener} state: a chunk was uploaded; more calls follow. */
+  public static final int SYNC_PROGRESS = 0;
+  /** Final {@link ResourceSyncListener} state: the zip was uploaded and unpacked. */
+  public static final int SYNC_UPLOADED = 1;
+  /** Final {@link ResourceSyncListener} state: the server already had this version. */
+  public static final int SYNC_CACHED = 2;
+  /** Final {@link ResourceSyncListener} state: the sync failed. */
+  public static final int SYNC_FAILED = 3;
+
+  /**
+   * Keeps a local zip of resources in sync with the session sandbox, in the
+   * background.
+   *
+   * <p>The server remembers which version (modified time and size) of
+   * package {@code name} it last unpacked; the zip is uploaded and unpacked
+   * into {@code destPath} ({@code ""}: the sandbox root) only if it changed.
+   * Unpacking adds and overwrites files, never deletes any. {@code name}
+   * must be unique, e.g. {@code "acme.game.level1"} (1-128 characters from
+   * {@code [A-Za-z0-9_.-]}). Returns at once; {@code listener} (may be
+   * {@code null}) reports progress and completion.
+   *
+   * @throws WishException if the sync cannot start (e.g. a missing zip)
+   */
+  public void syncResourcePackage(String name, String localZipPath, String destPath, ResourceSyncListener listener) {
+    check(nativeSyncResourcePackage(handle, name, localZipPath, destPath == null ? "" : destPath, listener));
+  }
+
+  /**
+   * Blocks until every {@link #syncResourcePackage} on this client has
+   * finished. Must not be called from a {@link ResourceSyncListener}.
+   */
+  public void waitResourceSyncs() {
+    check(nativeWaitResourceSyncs(handle));
+  }
+
   // ─── User store ───────────────────────────────────────────────────────────
   //
   // A persistent store of named objects private to this session's identity
@@ -375,6 +412,10 @@ public final class Client implements AutoCloseable {
 
   private static native int nativeUploadFile(long handle, String name, byte[] data);
   private static native byte[] nativeDownloadFile(long handle, String name);
+
+  private static native int nativeSyncResourcePackage(
+      long handle, String name, String localZipPath, String destPath, ResourceSyncListener listener);
+  private static native int nativeWaitResourceSyncs(long handle);
 
   private static native boolean nativeUserStoreAvailable(long handle);
   private static native long nativeUserStoreGet(long handle, String name);

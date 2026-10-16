@@ -286,6 +286,7 @@ add_library(wish_client STATIC
   src/client/desktop_endpoint.hpp
   src/client/desktop_endpoint.cpp
   src/client/wish_app_host.hpp
+  src/client/resource_sync.hpp
   src/client/user_store_rpc.hpp
   src/ui/ui_descriptor.hpp
   src/ui/ui_descriptor.cpp

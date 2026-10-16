@@ -72,6 +72,25 @@ pub type rmi_proxy_event_fn = unsafe extern "C" fn(params: bison_handle, user: *
 /// `wish_session_fn`: `void (*)(wish_client_handle client, void* userdata)`
 pub type wish_session_fn = unsafe extern "C" fn(client: wish_client_handle, userdata: *mut c_void);
 
+/// `wish_sync_state` values.
+pub const WISH_SYNC_PROGRESS: c_int = 0;
+pub const WISH_SYNC_UPLOADED: c_int = 1;
+pub const WISH_SYNC_CACHED: c_int = 2;
+pub const WISH_SYNC_FAILED: c_int = 3;
+
+/// `wish_resource_sync_fn`: `void (*)(wish_client_handle client, const char* name,
+/// wish_sync_state state, uint64_t transferred, uint64_t total, const char* error,
+/// void* userdata)`
+pub type wish_resource_sync_fn = unsafe extern "C" fn(
+    client: wish_client_handle,
+    name: *const c_char,
+    state: c_int,
+    transferred: u64,
+    total: u64,
+    error: *const c_char,
+    userdata: *mut c_void,
+);
+
 extern "C" {
     // ── bison_c.h: lifecycle ────────────────────────────────────────────────
 
@@ -332,6 +351,18 @@ extern "C" {
         dest_path: *const c_char,
         local_zip_path: *const c_char,
     ) -> wish_error;
+
+    // ── wish_client_c.h: resource packages ────────────────────────────────────
+
+    pub fn wish_sync_resource_package(
+        client: wish_client_handle,
+        name: *const c_char,
+        local_zip_path: *const c_char,
+        dest_path: *const c_char,
+        fn_: Option<wish_resource_sync_fn>,
+        userdata: *mut c_void,
+    ) -> wish_error;
+    pub fn wish_wait_resource_syncs(client: wish_client_handle) -> wish_error;
 
     // ── wish_client_c.h: user store ───────────────────────────────────────────
 

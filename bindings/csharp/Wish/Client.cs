@@ -50,6 +50,8 @@ public sealed class Client : IDisposable
 {
     private nint _handle;
     private object? _sessionCallback; // keeps the native-callback delegate alive during Run()
+    // Native callbacks of running resource syncs, kept alive until their final call.
+    private readonly HashSet<NativeResourceSyncFn> _syncCallbacks = new();
 
     private Client(nint handle) => _handle = handle;
 
@@ -476,6 +478,90 @@ public sealed class Client : IDisposable
             $"upload_package_from_path({destPath})", LastError);
     }
 
+    // ── Resource packages ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Keeps a local zip of resources in sync with the session sandbox, in
+    /// the background.
+    /// </summary>
+    /// <remarks>
+    /// The server remembers which version (modified time and size) of
+    /// package <paramref name="name"/> it last unpacked; the zip is uploaded
+    /// and unpacked into <paramref name="destPath"/> (empty: the sandbox
+    /// root) only if it changed. Unpacking adds and overwrites files, never
+    /// deletes any. <paramref name="name"/> must be unique, e.g.
+    /// <c>"acme.game.level1"</c> (1-128 characters from <c>[A-Za-z0-9_.-]</c>).
+    /// Progress reports arrive on a background thread.
+    /// </remarks>
+    /// <returns>
+    /// A task resolving to <c>true</c> if the zip was uploaded, <c>false</c>
+    /// if it was already current; faulted with a <see cref="WishException"/>
+    /// on failure.
+    /// </returns>
+    /// <exception cref="WishException">The sync cannot start (e.g. a missing zip).</exception>
+    public Task<bool> SyncResourcePackage(
+        string name,
+        string localZipPath,
+        string destPath = "",
+        IProgress<(ulong Transferred, ulong Total)>? progress = null)
+    {
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        NativeResourceSyncFn? native = null;
+        native = (_, _, state, transferred, total, error, _) =>
+        {
+            try
+            {
+                switch ((ResourceSyncState)state)
+                {
+                    case ResourceSyncState.Progress:
+                        progress?.Report((transferred, total));
+                        return;
+                    case ResourceSyncState.Failed:
+                        tcs.TrySetException(new WishException(
+                            WishErrorCode.Exception, $"sync_resource_package({name})",
+                            Marshal.PtrToStringUTF8(error) ?? ""));
+                        break;
+                    default:
+                        tcs.TrySetResult((ResourceSyncState)state == ResourceSyncState.Uploaded);
+                        break;
+                }
+            }
+            catch
+            {
+                // C ABI boundary: cannot propagate.
+            }
+            lock (_syncCallbacks)
+            {
+                _syncCallbacks.Remove(native!);
+            }
+        };
+
+        lock (_syncCallbacks)
+        {
+            _syncCallbacks.Add(native);
+        }
+        int rc = Native.wish_sync_resource_package(
+            _handle, name, localZipPath, destPath, Marshal.GetFunctionPointerForDelegate(native), nint.Zero);
+        if (rc != (int)WishErrorCode.Ok)
+        {
+            lock (_syncCallbacks)
+            {
+                _syncCallbacks.Remove(native);
+            }
+        }
+        WishException.Check(rc, $"sync_resource_package({name})", LastError);
+        return tcs.Task;
+    }
+
+    /// <summary>
+    /// Blocks until every <see cref="SyncResourcePackage"/> on this client has
+    /// finished. Must not be called from a progress report.
+    /// </summary>
+    public void WaitResourceSyncs()
+    {
+        WishException.Check(Native.wish_wait_resource_syncs(_handle), "wait_resource_syncs", LastError);
+    }
+
     // ── User store ────────────────────────────────────────────────────────────
     //
     // A persistent store of named objects private to this session's identity
@@ -639,4 +725,13 @@ public enum NotifyKind
     Success = 1,
     Warning = 2,
     Error = 3,
+}
+
+/// <summary>State of a resource sync report (<c>wish_sync_state</c>).</summary>
+public enum ResourceSyncState
+{
+    Progress = 0,
+    Uploaded = 1,
+    Cached = 2,
+    Failed = 3,
 }

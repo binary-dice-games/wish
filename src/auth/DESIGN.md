@@ -440,6 +440,7 @@ later tool. The layout is therefore:
   res/                                 embedded assets (populate_resource_dir())
   private/apps/<org>.<collection>.<name>/
     tmp/<random hex>/                  one per file_service::create_temp_dir() call
+  private/packages/<name>.version      resource package manifests (sync_resource_package())
 ```
 
 - `file_service::app_private_dir(qualified_app)` maps a tool's

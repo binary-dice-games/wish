@@ -54,7 +54,8 @@ if(WISH_BUILD_TESTS)
   # binding client's counterpart, so this target additionally links the full
   # `wish` library (client + server) purely for that server-side half.
   add_executable(wish_cpp_binding_tests tests/test_client.cpp)
-  target_link_libraries(wish_cpp_binding_tests PRIVATE wish_cpp wish gtest gtest_main)
+  # miniz builds the zip fixtures for the resource package tests.
+  target_link_libraries(wish_cpp_binding_tests PRIVATE wish_cpp wish miniz gtest gtest_main)
   target_include_directories(wish_cpp_binding_tests PRIVATE
       ${CMAKE_SOURCE_DIR}               # for "src/rmi/transport/socket_transport.hpp"
       ${CMAKE_SOURCE_DIR}/extern/bison  # bison public headers

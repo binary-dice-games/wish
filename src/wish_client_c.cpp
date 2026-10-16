@@ -37,7 +37,9 @@
 #include <condition_variable>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
+#include <future>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -99,6 +101,15 @@ class c_abi_app_host : public wish::wish_app_host {
 
   std::future<std::string> create_temp_dir(const std::string& qualified_app) override {
     return client_.create_temp_dir(qualified_app);
+  }
+
+  std::future<bool> sync_resource_package(
+      const std::string& name,
+      const std::filesystem::path& local_zip,
+      const std::string& dest_path,
+      wish::transfer_progress_callback on_progress,
+      wish::resource_sync_callback on_done) override {
+    return client_.sync_resource_package(name, local_zip, dest_path, std::move(on_progress), std::move(on_done));
   }
 
   bool has_notifications() const override {
@@ -196,6 +207,24 @@ struct wish_client_handle_ {
 
   std::string last_error_;
 
+  // Futures of wish_sync_resource_package() calls. Declared after client_
+  // so that, on destruction, these (std::async) futures block until their
+  // syncs finish while client_ is still alive.
+  synchronized<std::vector<std::future<bool>>> resource_syncs_;
+
+  /// Blocks until every started resource sync has finished, including any
+  /// started meanwhile (e.g. from a sync callback).
+  void wait_resource_syncs() {
+    for (;;) {
+      std::vector<std::future<bool>> pending;
+      std::swap(pending, *resource_syncs_.wlock());
+      if (pending.empty())
+        return;
+      for (auto& f : pending)
+        f.wait();
+    }
+  }
+
   // Set by wish_run_app() for the duration of one client_->run() call; when
   // non-null, on_session() runs this app via a c_abi_app_host instead of
   // invoking session_fn_.
@@ -222,6 +251,8 @@ void c_abi_client::on_session() {
       state_->last_error_ = "unknown exception";
     }
     state_->active_host_ = nullptr;
+    // Before client::run() disconnects: no sync may outlive the session.
+    state_->wait_resource_syncs();
     return;
   }
   if (state_->session_fn_) {
@@ -230,6 +261,7 @@ void c_abi_client::on_session() {
       state_->session_active_ = true;
     }
     state_->session_fn_(state_, state_->session_ud_);
+    state_->wait_resource_syncs();
     std::lock_guard<std::mutex> lk(state_->wait_mtx_);
     state_->session_active_ = false;
   }
@@ -800,6 +832,65 @@ wish_upload_package_from_path(wish_client_handle c, const char* dest_path, const
     c->last_error_ = e.what();
     return WISH_ERR_EXCEPTION;
   }
+}
+
+// ── Resource packages ─────────────────────────────────────────────────────────
+
+extern "C" wish_error wish_sync_resource_package(
+    wish_client_handle c,
+    const char* name,
+    const char* local_zip_path,
+    const char* dest_path,
+    wish_resource_sync_fn fn,
+    void* userdata) {
+  if (!c || !name || !local_zip_path)
+    return WISH_ERR_NULL;
+  try {
+    std::error_code ec;
+    auto total = static_cast<std::uint64_t>(std::filesystem::file_size(local_zip_path, ec));
+    if (ec) {
+      c->last_error_ = std::string{"cannot read local file: "} + local_zip_path;
+      return WISH_ERR_EXCEPTION;
+    }
+
+    wish::transfer_progress_callback on_progress;
+    wish::resource_sync_callback on_done;
+    if (fn) {
+      // Both callbacks run on the sync's worker thread, one after another.
+      auto sent = std::make_shared<std::uint64_t>(0);
+      std::string pkg{name};
+      on_progress = [c, fn, userdata, pkg, sent](std::uint64_t transferred, std::uint64_t size) {
+        *sent = transferred;
+        fn(c, pkg.c_str(), WISH_SYNC_PROGRESS, transferred, size, nullptr, userdata);
+      };
+      on_done = [c, fn, userdata, pkg, sent, total](const wish::resource_sync_result& r) {
+        if (!r.error.empty())
+          fn(c, pkg.c_str(), WISH_SYNC_FAILED, *sent, total, r.error.c_str(), userdata);
+        else
+          fn(c, pkg.c_str(), r.uploaded ? WISH_SYNC_UPLOADED : WISH_SYNC_CACHED, total, total, nullptr, userdata);
+      };
+    }
+
+    auto future = c->client_->sync_resource_package(
+        name, local_zip_path, dest_path ? dest_path : "", std::move(on_progress), std::move(on_done));
+    auto syncs = c->resource_syncs_.wlock();
+    // Drop finished syncs so a long session doesn't accumulate them.
+    std::erase_if(*syncs, [](const std::future<bool>& f) {
+      return f.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+    });
+    syncs->push_back(std::move(future));
+    return WISH_OK;
+  } catch (const std::exception& e) {
+    c->last_error_ = e.what();
+    return WISH_ERR_EXCEPTION;
+  }
+}
+
+extern "C" wish_error wish_wait_resource_syncs(wish_client_handle c) {
+  if (!c)
+    return WISH_ERR_NULL;
+  c->wait_resource_syncs();
+  return WISH_OK;
 }
 
 // ── User store ────────────────────────────────────────────────────────────────

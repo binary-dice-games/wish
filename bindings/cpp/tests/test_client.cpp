@@ -23,6 +23,9 @@
 #include "src/rmi/transport/tls_socket_transport.hpp"
 #include "tests/tls_test_certs.hpp"
 
+#include <miniz.h>
+#include <miniz_zip.h>
+
 #include <chrono>
 #include <condition_variable>
 #include <cstdlib>
@@ -165,6 +168,47 @@ TEST_F(WishCppClientTest, RegisterTemplateAppliesTranslations) {
     EXPECT_EQ(c.translate("$$GREETING"), "Hola");
     EXPECT_THROW(c.set_language("../x"), wish::error);
   });
+}
+
+TEST_F(WishCppClientTest, SyncResourcePackageUploadsThenCaches) {
+  auto* info = ::testing::UnitTest::GetInstance()->current_test_info();
+  auto zip_path = std::filesystem::temp_directory_path() /
+      (std::string{"wish_cpp_"} + info->test_suite_name() + "_" + info->name() + ".zip");
+  {
+    mz_zip_archive zip{};
+    ASSERT_TRUE(mz_zip_writer_init_file(&zip, zip_path.string().c_str(), 0));
+    const std::string content = "alpha";
+    ASSERT_TRUE(mz_zip_writer_add_mem(&zip, "a.txt", content.data(), content.size(), MZ_DEFAULT_COMPRESSION));
+    ASSERT_TRUE(mz_zip_writer_finalize_archive(&zip));
+    mz_zip_writer_end(&zip);
+  }
+
+  // Written on the sync thread, read after wait_resource_syncs().
+  std::vector<wish::client::resource_sync_status> first, second;
+  std::string content;
+  auto client = wish::client::tcp("127.0.0.1", port_);
+  client.run([&](wish::client& c) {
+    c.sync_resource_package("test.cpp", zip_path.string(), "assets", [&](const auto& s) { first.push_back(s); });
+    c.wait_resource_syncs();
+    content = c.download_file("assets/a.txt");
+
+    c.sync_resource_package("test.cpp", zip_path.string(), "assets", [&](const auto& s) { second.push_back(s); });
+    c.wait_resource_syncs();
+
+    EXPECT_THROW(c.sync_resource_package("test.cpp", zip_path.string() + ".missing"), wish::error);
+  });
+
+  ASSERT_FALSE(first.empty());
+  EXPECT_EQ(first.back().state, WISH_SYNC_UPLOADED);
+  EXPECT_EQ(first.back().name, "test.cpp");
+  for (std::size_t i = 0; i + 1 < first.size(); ++i)
+    EXPECT_EQ(first[i].state, WISH_SYNC_PROGRESS);
+  EXPECT_EQ(content, "alpha");
+  ASSERT_FALSE(second.empty());
+  EXPECT_EQ(second.back().state, WISH_SYNC_CACHED);
+  EXPECT_EQ(second.back().transferred, second.back().total);
+
+  std::filesystem::remove(zip_path);
 }
 
 TEST_F(WishCppClientTest, ProxyGetForUnknownPathThrows) {

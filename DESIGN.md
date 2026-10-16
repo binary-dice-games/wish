@@ -319,7 +319,9 @@ Registered as a bison class (`"__WishFileSystem"_key`) in the `"wish"` namespace
 | `delete` | `name` (string) | Remove a file from the session folder |
 | `upload_chunk` | `name`, `data`, `first` (bool), `eof` (bool) | Append one chunk of a large upload; see below |
 | `download_chunk` | `name`, `offset` (int32), `max_size` (int32) | Read one chunk of a large download at `offset`; see below |
-| `unpack` | `zip_name` (string), `dest` (string) | Extract a previously-uploaded zip archive into a sandboxed directory |
+| `unpack` | `zip_name` (string), `dest` (string) | Extract a previously-uploaded zip archive into a sandboxed directory (empty `dest`: the sandbox root) |
+| `package_current` | `name` (string), `version` (string) | Whether resource package `name` was last unpacked from a zip with this version token |
+| `commit_package` | `name`, `version`, `dest` (strings) | Unpack the uploaded zip of package `name` into `dest` and record `version` |
 
 Path traversal is blocked: `name` is validated to contain no directory separators or `..` components. The service only exposes files within `session.resource_dir`. The entire folder is removed when the client disconnects.
 
@@ -331,6 +333,17 @@ An `Image` element's `src` field is resolved relative to `session.resource_dir` 
 - `unpack` extracts a zip previously written into the sandbox (typically via `upload_chunk`) into a destination directory, using the same `resolve_path()` sandboxing for both `zip_name` and `dest`. Because the archive's *entries* are client-supplied content (unlike the build-controlled embedded resource archive `resource_store` unpacks), every entry's target path is independently re-validated against `dest` to block zip-slip (`../`-escaping entries). Extraction merges into `dest`; the staging archive is deleted on success.
 
 `bdg::wish::client` exposes this as overloaded `upload_file`/`download_file` (a `std::string` overload for the simple case, and `std::istream&`/`std::ostream&` overloads that drive the chunked protocol under the hood) plus `upload_package(dest_path, istream&)`, which uploads a zip via the chunked path and calls `unpack` — e.g. `upload_package("my_folder/my_package", zip_stream)` extracts into `my_folder/my_package/` in the sandbox.
+
+**Resource packages.** `client::sync_resource_package(name, local_zip, dest_path, on_progress, on_done)` keeps a client zip in sync with the sandbox so the client never tracks what the server already has. It runs on a background thread (`src/client/resource_sync.hpp`, shared by `client` and `standalone`):
+1. The client builds an opaque version token, `"<mtime ticks>:<size>"`, from the local zip and calls `package_current`. If it matches, it reports `(size, size)` progress and finishes (`uploaded == false`).
+2. Otherwise it streams the zip with `upload_chunk` to `private/packages/<name>.zip` and calls `commit_package`, which unpacks it (additive, like `unpack`) and writes the token to `private/packages/<name>.version`.
+
+Design choices:
+- The server only compares tokens for equality, so any change (including restoring an older zip) triggers an upload, and no clock conversion or 64-bit integers cross RMI.
+- The manifest lives in the sandbox, so it shares the extracted files' lifetime: one session with a temp sandbox, across sessions with a persistent one. A stale manifest can never claim files that were deleted with the sandbox.
+- `commit_package` removes the old manifest before unpacking and writes the new one only after success, so a failed or interrupted sync is retried.
+- `package_current` validates `name` (`[A-Za-z0-9_.-]`, 1-128 chars, no leading `.`; `file_service::package_path()`) before anything is uploaded.
+- `on_done` runs exactly once per call, success or failure. The C ABI (`wish_sync_resource_package`) maps both callbacks onto one `wish_resource_sync_fn` with a `wish_sync_state`, and the handle waits for pending syncs when the session callback returns, so no sync outlives the session.
 
 ### Persistent stores (`persistent_store`, `__WishUserStore`)
 
@@ -379,6 +392,7 @@ Thin wrapper around `bison::rmi::client`. Adds:
 - `upload_file(name, bytes)` / `download_file(name)` -- whole-file service calls.
 - `upload_file(name, istream&)` / `download_file(name, ostream&)` -- streaming, chunked equivalents for large files; never buffer the full content in memory.
 - `upload_package(dest_path, istream&)` -- streams a zip archive to the server and has it unpacked into `dest_path` inside the sandbox.
+- `sync_resource_package(name, local_zip, dest_path, on_progress, on_done)` -- background, cached zip sync: uploads and unpacks only when the local zip changed (see `file_service` above).
 - `set_style_preset(name)` -- apply a named ImGui theme preset (`”dark”`, `”light”`, `”classic”`).
 - `set_style(params)` -- merge per-field style overrides (floats, `#RRGGBBAA` color strings).
 - `get_style()` -- retrieve the current session style as a flat dynamic.

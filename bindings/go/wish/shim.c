@@ -47,3 +47,13 @@ rmi_error rmi_proxy_on_event_shim(
     uintptr_t user) {
   return rmi_proxy_on_event(proxy, event_name, handler, (void*)user);
 }
+
+wish_error wish_sync_resource_package_shim(
+    wish_client_handle client,
+    const char* name,
+    const char* local_zip_path,
+    const char* dest_path,
+    wish_resource_sync_fn fn,
+    uintptr_t userdata) {
+  return wish_sync_resource_package(client, name, local_zip_path, dest_path, fn, (void*)userdata);
+}

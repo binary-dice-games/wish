@@ -362,6 +362,54 @@ class client {
         "client::upload_package(" + dest_path + ")", h_);
   }
 
+  // ── Resource packages ────────────────────────────────────────────────
+
+  /** @brief One progress or completion report of sync_resource_package(). */
+  struct resource_sync_status {
+    std::string name; ///< Package name.
+    wish_sync_state state; ///< WISH_SYNC_PROGRESS, or the final UPLOADED/CACHED/FAILED.
+    std::uint64_t transferred{0}; ///< Bytes uploaded so far.
+    std::uint64_t total{0}; ///< Size of the local zip.
+    std::string error; ///< Failure message when state is WISH_SYNC_FAILED.
+
+    /** @brief True for the last report (any state but WISH_SYNC_PROGRESS). */
+    bool finished() const {
+      return state != WISH_SYNC_PROGRESS;
+    }
+  };
+
+  /** @brief Callback of sync_resource_package(); runs on a background thread. */
+  using resource_sync_fn = std::function<void(const resource_sync_status&)>;
+
+  /**
+   * @brief Keeps a local zip of resources in sync with the session sandbox,
+   *        in the background (see wish_sync_resource_package()).
+   *
+   * The zip is uploaded and unpacked into @p dest_path (empty: the sandbox
+   * root) only if it changed since the server last unpacked package
+   * @p name. Returns at once; @p on_update gets progress reports and one
+   * final report (finished() is true).
+   *
+   * @throws error if the sync cannot start (e.g. @p local_zip_path is missing).
+   */
+  void sync_resource_package(
+      const std::string& name,
+      const std::string& local_zip_path,
+      const std::string& dest_path = "",
+      resource_sync_fn on_update = nullptr) {
+    auto* fn = on_update ? new resource_sync_fn(std::move(on_update)) : nullptr;
+    wish_error rc = wish_sync_resource_package(
+        h_, name.c_str(), local_zip_path.c_str(), dest_path.c_str(), fn ? &client::sync_trampoline : nullptr, fn);
+    if (rc != WISH_OK)
+      delete fn;
+    detail::throw_if_wish_error(rc, "client::sync_resource_package(" + name + ")", h_);
+  }
+
+  /** @brief Blocks until every sync_resource_package() on this client has finished. */
+  void wait_resource_syncs() {
+    detail::throw_if_wish_error(wish_wait_resource_syncs(h_), "client::wait_resource_syncs", h_);
+  }
+
   // ── User store ───────────────────────────────────────────────────────
   //
   // A persistent store of named objects private to this session's identity
@@ -530,6 +578,25 @@ class client {
   void destroy() {
     if (h_) wish_client_destroy(h_);
     h_ = nullptr;
+  }
+
+  static void sync_trampoline(
+      wish_client_handle,
+      const char* name,
+      wish_sync_state state,
+      uint64_t transferred,
+      uint64_t total,
+      const char* error,
+      void* userdata) {
+    auto* fn = static_cast<resource_sync_fn*>(userdata);
+    resource_sync_status status{name, state, transferred, total, error ? error : ""};
+    try {
+      (*fn)(status);
+    } catch (...) {
+      // Never let an exception cross the C ABI.
+    }
+    if (status.finished())
+      delete fn;
   }
 
   static void session_trampoline(wish_client_handle, void* userdata) {

@@ -73,6 +73,10 @@ package wish
 // function pointers before cgo's generated header is available.
 extern void goSessionTrampoline(wish_client_handle client, void* userdata);
 extern void goProxyEventTrampoline(bison_handle params, void* user);
+// Same ABI as wish_resource_sync_fn (cgo exports drop const and pass the
+// enum as int).
+extern void goResourceSyncTrampoline(wish_client_handle client, char* name, int state,
+    uint64_t transferred, uint64_t total, char* errMsg, void* userdata);
 */
 import "C"
 
@@ -130,4 +134,39 @@ func goProxyEventTrampoline(params C.bison_handle, user unsafe.Pointer) {
 	paramsVal := &Value{handle: owned}
 	defer paramsVal.Close()
 	fn(paramsVal)
+}
+
+// goResourceSyncTrampoline is the C-callable wish_resource_sync_fn for
+// Client.SyncResourcePackage; `userdata` is a runtime/cgo.Handle resolving
+// to the registered callback, deleted after the final report. A panic in
+// the callback is recovered and swallowed (see goProxyEventTrampoline).
+//
+//export goResourceSyncTrampoline
+func goResourceSyncTrampoline(
+	client C.wish_client_handle,
+	name *C.char,
+	state C.int,
+	transferred, total C.uint64_t,
+	errMsg *C.char,
+	userdata unsafe.Pointer,
+) {
+	h := cgo.Handle(uintptr(userdata))
+	status := ResourceSyncStatus{
+		Name:        C.GoString(name),
+		State:       ResourceSyncState(state),
+		Transferred: uint64(transferred),
+		Total:       uint64(total),
+	}
+	if errMsg != nil {
+		status.Err = C.GoString(errMsg)
+	}
+	if status.Finished() {
+		defer h.Delete()
+	}
+	fn, ok := h.Value().(func(ResourceSyncStatus))
+	if !ok || fn == nil {
+		return
+	}
+	defer func() { _ = recover() }()
+	fn(status)
 }

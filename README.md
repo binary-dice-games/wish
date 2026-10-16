@@ -97,6 +97,8 @@ img.set({{"src"_key, std::string{"logo.png"}}, {"width"_key, 64}, {"height"_key,
 
 For large files, `upload_file`/`download_file` also accept a `std::istream&`/`std::ostream&` to stream the content in chunks instead of buffering it whole, and `upload_package(dest_path, zip_stream)` uploads a zip archive and has the server unpack it into `dest_path` in the sandbox. See [DESIGN.md](DESIGN.md#bdgwishfile_service) for the chunked-transfer protocol.
 
+To avoid tracking what the server already has, `sync_resource_package(name, zip_path, dest_path, on_progress, on_done)` syncs a zip in the background: it is uploaded and unpacked only if it changed since the server last unpacked package `name` (e.g. a game syncing a level's resources when the level starts).
+
 New to wish? [docs/tutorial.md](docs/tutorial.md) walks through building, running, and extending a UI end to end, starting from the `calculator` example.
 
 ## Core Concepts
@@ -108,7 +110,7 @@ New to wish? [docs/tutorial.md](docs/tutorial.md) walks through building, runnin
 | **UI templates** | Named JSON/YAML blueprints stored on the server via `register_template`. `instantiate_template(name)` parses and creates a fresh object tree, returning a map of named handles. |
 | **Remote properties** | `proxy.set(fields)` / `proxy.get()` synchronize typed fields. Property sets are one-way (no round-trip) for low-latency visual updates. |
 | **Events** | Server-side interactions emit named events (`clicked`, `changed`, ...) to the client via `proxy.onEvent`. |
-| **File service** | Clients upload/download files via `client::upload_file` / `download_file` (whole-file or streamed/chunked overloads), plus `upload_package` to upload and unpack a zip archive. Files are stored in a sandboxed per-session folder, deleted on disconnect. |
+| **File service** | Clients upload/download files via `client::upload_file` / `download_file` (whole-file or streamed/chunked overloads), plus `upload_package` to upload and unpack a zip archive and `sync_resource_package` to do so in the background only when the zip changed. Files are stored in a sandboxed per-session folder, deleted on disconnect. |
 | **Internationalization** | Template strings of the form `"$$KEY"` are replaced from `<lang>.lang` translation files (`KEY = value`), falling back to English. Pick the language with `--lang=es` or `set_language`. See [docs/i18n.md](docs/i18n.md). |
 | **Persistent stores** | Named bison objects kept across sessions and restarts in `~/.wish`: a per-identity **user store** reachable from every client API (`user_store_get`/`set`/`erase`/`keys`; identified sessions only, e.g. `--username`), and a **server store** for server-side code only. See [docs/persistent-store.md](docs/persistent-store.md). Apps can describe their settings for the macOS-like **Settings** tool (`wish client --run conf`); see [docs/settings.md](docs/settings.md). |
 | **Multi-client** | Each connected client has an isolated session: independent object tree, template registry, and resource folder. |

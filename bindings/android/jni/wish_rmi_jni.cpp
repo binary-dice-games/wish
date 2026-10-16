@@ -42,6 +42,8 @@ jclass g_event_handler_class = nullptr;
 jmethodID g_event_handler_on_event = nullptr;
 jclass g_session_callback_class = nullptr;
 jmethodID g_session_callback_run = nullptr;
+jclass g_sync_listener_class = nullptr;
+jmethodID g_sync_listener_on_update = nullptr;
 
 JNIEnv* attach(bool* attached) {
   JNIEnv* env = nullptr;
@@ -110,6 +112,42 @@ void JNICALL event_trampoline(bison_handle params, void* user) {
   if (attached) g_jvm->DetachCurrentThread();
 }
 
+/// Context for one `wish_sync_resource_package()` call; freed by
+/// `sync_trampoline` on the final (non-progress) report.
+struct sync_ctx {
+  jobject listener; // global ref to the ResourceSyncListener instance
+};
+
+void JNICALL sync_trampoline(
+    wish_client_handle,
+    const char* name,
+    wish_sync_state state,
+    uint64_t transferred,
+    uint64_t total,
+    const char* error,
+    void* user) {
+  auto* ctx = static_cast<sync_ctx*>(user);
+  bool attached = false;
+  JNIEnv* env = attach(&attached);
+  if (env) {
+    jstring j_name = env->NewStringUTF(name);
+    jstring j_error = error ? env->NewStringUTF(error) : nullptr;
+    env->CallVoidMethod(
+        ctx->listener, g_sync_listener_on_update, j_name, static_cast<jint>(state), static_cast<jlong>(transferred),
+        static_cast<jlong>(total), j_error);
+    if (env->ExceptionCheck()) {
+      env->ExceptionDescribe();
+      env->ExceptionClear();
+      log_error("wish_jni", "ResourceSyncListener threw; the exception could not cross the C ABI and was dropped");
+    }
+    if (j_name) env->DeleteLocalRef(j_name);
+    if (j_error) env->DeleteLocalRef(j_error);
+    if (state != WISH_SYNC_PROGRESS) env->DeleteGlobalRef(ctx->listener);
+  }
+  if (state != WISH_SYNC_PROGRESS) delete ctx;
+  if (attached) g_jvm->DetachCurrentThread();
+}
+
 }  // namespace
 
 extern "C" {
@@ -134,6 +172,12 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
   if (!session_local) return JNI_ERR;
   g_session_callback_class = static_cast<jclass>(env->NewGlobalRef(session_local));
   g_session_callback_run = env->GetMethodID(g_session_callback_class, "run", "(Lcom/bdg/wish/Client;)V");
+
+  jclass sync_local = env->FindClass("com/bdg/wish/ResourceSyncListener");
+  if (!sync_local) return JNI_ERR;
+  g_sync_listener_class = static_cast<jclass>(env->NewGlobalRef(sync_local));
+  g_sync_listener_on_update =
+      env->GetMethodID(g_sync_listener_class, "onUpdate", "(Ljava/lang/String;IJJLjava/lang/String;)V");
 
   return JNI_VERSION_1_6;
 }
@@ -296,6 +340,27 @@ JNIEXPORT jint JNICALL Java_com_bdg_wish_Client_nativeUploadFile(
   return static_cast<jint>(wish_upload_file(
       from_jlong<wish_client_handle>(handle), n.c_str(), reinterpret_cast<const char*>(buf.data()),
       static_cast<size_t>(len)));
+}
+
+JNIEXPORT jint JNICALL Java_com_bdg_wish_Client_nativeSyncResourcePackage(
+    JNIEnv* env, jclass, jlong handle, jstring name, jstring local_zip_path, jstring dest_path, jobject listener) {
+  jstring_view n(env, name);
+  jstring_view zip(env, local_zip_path);
+  jstring_view dest(env, dest_path);
+  auto* ctx = listener ? new sync_ctx{env->NewGlobalRef(listener)} : nullptr;
+  wish_error err = wish_sync_resource_package(
+      from_jlong<wish_client_handle>(handle), n.c_str(), zip.c_str(), dest.c_str(), ctx ? &sync_trampoline : nullptr,
+      ctx);
+  if (err != WISH_OK && ctx) {
+    // The listener never runs when the sync did not start.
+    env->DeleteGlobalRef(ctx->listener);
+    delete ctx;
+  }
+  return static_cast<jint>(err);
+}
+
+JNIEXPORT jint JNICALL Java_com_bdg_wish_Client_nativeWaitResourceSyncs(JNIEnv*, jclass, jlong handle) {
+  return static_cast<jint>(wish_wait_resource_syncs(from_jlong<wish_client_handle>(handle)));
 }
 
 JNIEXPORT jbyteArray JNICALL Java_com_bdg_wish_Client_nativeDownloadFile(

@@ -175,6 +175,17 @@ std::future<std::string> wish_client_app::create_temp_dir(const std::string& qua
   return wish_client_->create_temp_dir(qualified_app);
 }
 
+std::future<bool> wish_client_app::sync_resource_package(
+    const std::string& name,
+    const std::filesystem::path& local_zip,
+    const std::string& dest_path,
+    bdg::wish::transfer_progress_callback on_progress,
+    bdg::wish::resource_sync_callback on_done) {
+  if (!wish_client_)
+    throw std::runtime_error("client not connected");
+  return wish_client_->sync_resource_package(name, local_zip, dest_path, std::move(on_progress), std::move(on_done));
+}
+
 bool wish_client_app::has_notifications() const {
   return wish_client_ && wish_client_->has_notifications();
 }

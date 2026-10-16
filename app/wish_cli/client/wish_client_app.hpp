@@ -105,6 +105,13 @@ class wish_client_app : public bison::app::client_app, public wish_app_host {
 
   std::future<std::string> create_temp_dir(const std::string& qualified_app) override;
 
+  std::future<bool> sync_resource_package(
+      const std::string& name,
+      const std::filesystem::path& local_zip,
+      const std::string& dest_path,
+      bdg::wish::transfer_progress_callback on_progress,
+      bdg::wish::resource_sync_callback on_done) override;
+
   bool has_notifications() const override;
   std::future<uint64_t> notify(const notification& n) override;
   std::future<bool> dismiss_notification(uint64_t id) override;

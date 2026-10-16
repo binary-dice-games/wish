@@ -265,3 +265,35 @@ fn desktop_stop_from_another_thread_ends_the_loop() {
     assert!(rx.recv_timeout(std::time::Duration::from_secs(5)).is_ok());
     loop_thread.join().unwrap();
 }
+
+// ═════════════════════════════════════════════════════════════════════════
+// Resource packages
+// ═════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn sync_resource_package_with_missing_zip_errors() {
+    let client = Client::tcp("127.0.0.1", 1);
+    let result = client.sync_resource_package("test.rs", "/nonexistent/wish_resources.zip", "", |_| {});
+    assert!(result.is_err());
+}
+
+#[test]
+fn unconnected_sync_reports_one_failure() {
+    use std::sync::{Arc, Mutex};
+    let zip = std::env::temp_dir().join("wish_rust_unconnected_sync_reports_one_failure.zip");
+    std::fs::write(&zip, b"not really a zip").unwrap();
+    let client = Client::tcp("127.0.0.1", 1);
+    let reports = Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::clone(&reports);
+    client
+        .sync_resource_package("test.rs", zip.to_str().unwrap(), "", move |s| {
+            sink.lock().unwrap().push(s.clone())
+        })
+        .unwrap();
+    client.wait_resource_syncs().unwrap();
+    std::fs::remove_file(&zip).ok();
+    let reports = reports.lock().unwrap();
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].state, wish::ResourceSyncState::Failed);
+    assert!(reports[0].error.is_some());
+}

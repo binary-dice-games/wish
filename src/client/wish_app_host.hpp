@@ -7,6 +7,7 @@
 #pragma once
 
 #include <client/app_registry.hpp>
+#include <client/resource_sync.hpp>
 #include <context/settings_schema.hpp>
 #include <server/notifications.hpp>
 
@@ -14,6 +15,7 @@
 #include "src/rmi/client/proxy.hpp"
 
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <future>
 #include <optional>
@@ -88,6 +90,23 @@ class wish_app_host {
     std::promise<std::string> p;
     p.set_exception(std::make_exception_ptr(std::logic_error("wish: temp dirs not supported by this app host")));
     return p.get_future();
+  }
+
+  // ── Resource packages ───────────────────────────────────────────────────
+
+  /// @copydoc bdg::wish::client::sync_resource_package
+  ///
+  /// Not pure: a host without a file service (e.g. a test double) inherits
+  /// this default, whose future throws `std::logic_error` (and which never
+  /// calls @p on_done).
+  [[nodiscard]] virtual std::future<bool> sync_resource_package(
+      const std::string& name,
+      const std::filesystem::path& local_zip,
+      const std::string& dest_path = "",
+      transfer_progress_callback on_progress = nullptr,
+      resource_sync_callback on_done = nullptr) {
+    (void)name, (void)local_zip, (void)dest_path, (void)on_progress, (void)on_done;
+    return unavailable<bool>("resource packages");
   }
 
   /// @brief Registration info of the app this host is running, or `nullptr`
