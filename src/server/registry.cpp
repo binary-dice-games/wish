@@ -41,7 +41,6 @@ void register_all() {
   register_slider(); // SliderFloat and SliderInt
   register_input_text();
   register_image();
-  register_video();
   register_separator();
   register_menu();
   register_desktop_shell();

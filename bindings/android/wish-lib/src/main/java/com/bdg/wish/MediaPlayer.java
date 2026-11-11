@@ -6,10 +6,9 @@
 package com.bdg.wish;
 
 /**
- * An audio/video file playing on the wish server, opened by
+ * An audio file playing on the wish server, opened by
  * {@link Client#openMedia}. The server decodes and plays it (see
- * docs/media.md); this class only sends commands. Show its video with a
- * {@code Video} widget whose {@code player} is {@link #name()}.
+ * docs/media.md); this class only sends commands.
  *
  * <p>Every method blocks until the server answered and throws
  * {@link WishException} once the session ended. {@link #close()} it to free it
@@ -32,10 +31,6 @@ public final class MediaPlayer implements AutoCloseable {
     public final double position;
     public final double duration;
     public final float volume;
-    public final int width;
-    public final int height;
-    public final boolean hasVideo;
-    public final boolean hasAudio;
     public final boolean loop;
     /** False when the server has no sound card (silent). */
     public final boolean audioOutput;
@@ -45,12 +40,8 @@ public final class MediaPlayer implements AutoCloseable {
       duration = v[1];
       volume = (float) v[2];
       state = (int) v[3];
-      width = (int) v[4];
-      height = (int) v[5];
-      hasVideo = v[6] != 0;
-      hasAudio = v[7] != 0;
-      loop = v[8] != 0;
-      audioOutput = v[9] != 0;
+      loop = v[4] != 0;
+      audioOutput = v[5] != 0;
     }
   }
 
@@ -88,7 +79,7 @@ public final class MediaPlayer implements AutoCloseable {
 
   /** The player's state, position and stream info. */
   public Status status() {
-    double[] v = new double[10];
+    double[] v = new double[6];
     check(nativeStatus(require(), v));
     return new Status(v);
   }

@@ -282,10 +282,9 @@ void server::render_loop() {
       }
 
 #ifdef WISH_MEDIA_ENABLED
-      // Every iteration, not only on drawn frames: new video frames and
-      // player events (an audio-only player ending) mark their session
-      // dirty, which is what schedules the frame that shows them.
-      media::pump_sessions(*renderer_, sessions_snapshot);
+      // Every iteration, not only on drawn frames: player events (a player
+      // ending) mark their session dirty, which is what sends them.
+      media::pump_sessions(sessions_snapshot);
 #endif
 
       // render_on_demand() renderers don't treat routine poll_events()

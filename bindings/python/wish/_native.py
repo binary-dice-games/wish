@@ -102,10 +102,6 @@ class MediaStatus(ctypes.Structure):
         ("duration", ctypes.c_double),
         ("volume", ctypes.c_float),
         ("state", ctypes.c_int32),
-        ("width", ctypes.c_int32),
-        ("height", ctypes.c_int32),
-        ("has_video", ctypes.c_int32),
-        ("has_audio", ctypes.c_int32),
         ("loop", ctypes.c_int32),
         ("audio_output", ctypes.c_int32),
     ]

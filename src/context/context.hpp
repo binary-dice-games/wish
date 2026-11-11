@@ -243,7 +243,7 @@ struct context : public bison::rmi::context {
   std::chrono::system_clock::time_point connected_at{std::chrono::system_clock::now()};
 
 #ifdef WISH_MEDIA_ENABLED
-  /// The `__WishMedia` RMI service: the session's audio/video players,
+  /// The `__WishMedia` RMI service: the session's audio players,
   /// playing files from `resource_dir` (see `media::media_service`). Set by
   /// `server::on_session_created()` / `standalone::on_session_created()`;
   /// null in a context built without a server (tests).

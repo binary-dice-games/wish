@@ -54,10 +54,6 @@ dynamic media_player::status() const {
   r["state_name"_key] = std::string{to_string(state)};
   r["position"_key] = static_cast<float>(pb->position());
   r["duration"_key] = static_cast<float>(info.duration);
-  r["width"_key] = static_cast<int32_t>(info.width);
-  r["height"_key] = static_cast<int32_t>(info.height);
-  r["has_video"_key] = info.has_video;
-  r["has_audio"_key] = info.has_audio;
   r["volume"_key] = pb->volume();
   r["loop"_key] = pb->loop();
   r["audio_output"_key] = pb->audio_output_active();
@@ -65,7 +61,7 @@ dynamic media_player::status() const {
   return r;
 }
 
-bool media_player::pump(const context& s, renderer& r) {
+bool media_player::pump(const context& s) {
   auto pb = engine();
   if (!pb)
     return false;
@@ -91,13 +87,6 @@ bool media_player::pump(const context& s, renderer& r) {
     }
     enqueue_event(s, rmi_id_, event_name, std::move(payload));
   }
-  if (pb->take_frame(frame_)) {
-    changed = true;
-    if (!texture_ || texture_->width() != frame_.width || texture_->height() != frame_.height)
-      texture_ = r.create_dynamic_texture(frame_.width, frame_.height);
-    if (texture_)
-      texture_->update(frame_.rgba.data(), frame_.width * 4);
-  }
   return changed;
 }
 
@@ -109,7 +98,6 @@ void media_player::close() {
     lock->reset();
   }
   pb.reset(); // joins the decode thread, closes the device
-  texture_.reset();
 }
 
 void register_media_player() {

@@ -1160,10 +1160,6 @@ extern "C" wish_error wish_media_get_status(wish_media_handle m, wish_media_stat
     out->duration = st.duration;
     out->volume = st.volume;
     out->state = static_cast<int32_t>(st.state);
-    out->width = st.width;
-    out->height = st.height;
-    out->has_video = st.has_video ? 1 : 0;
-    out->has_audio = st.has_audio ? 1 : 0;
     out->loop = st.loop ? 1 : 0;
     out->audio_output = st.audio_output ? 1 : 0;
   });

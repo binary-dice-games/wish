@@ -1,10 +1,10 @@
 // MIT License © 2026 Binary Dice Games
 /// @file playback.hpp
-/// @brief Plays one media file: decode thread, audio output, A/V clock and
-///        the play/pause/seek state machine behind a `media_player`.
+/// @brief Plays one audio file: decode thread, audio output, clock and the
+///        play/pause/seek state machine behind a `media_player`.
 #pragma once
 
-#include <media/media_decoder.hpp>
+#include <media/audio_decoder.hpp>
 
 #include "src/bison/bison_sync.hpp"
 
@@ -52,41 +52,38 @@ struct playback_options {
   /// server that must stay silent).
   bool audio_device = true;
   /// Monotonic seconds; defaults to std::chrono::steady_clock. Drives the
-  /// position whenever no audio device does (tests inject a manual clock).
+  /// position (tests inject a manual clock).
   std::function<double()> clock;
   /// Called from the decode thread when something changed that `update()`
-  /// should pick up (a frame is ready, the end was reached, an error).
+  /// should pick up (the end was reached, an error).
   std::function<void()> wake;
 };
 
 /**
- * @brief Plays one opened media file.
+ * @brief Plays one opened audio file.
  *
- * A decode thread keeps a few RGBA video frames and up to a second of audio
- * buffered ahead of the play position, also while paused, so the first
- * frame shows right after open or seek.
+ * A decode thread keeps up to a second of audio buffered ahead of the play
+ * position, also while paused, so playback starts right away after open or
+ * seek.
  *
  * The position follows `playback_options::clock` (the wall clock) while
- * playing. Video frames are shown when their time comes; audio goes to an
- * `audio_output`, which drops late samples or pads with silence whenever the
- * sound card drifts more than `kAudioSyncTolerance` from that position. A
- * sound-card clock would follow the device more exactly, but it stalls
- * whenever audio runs out (a short audio track, coarse interleaving), which
- * would freeze the video with it.
+ * playing. Audio goes to an `audio_output`, which drops late samples or pads
+ * with silence whenever the sound card drifts more than
+ * `kAudioSyncTolerance` from that position. So a server without a sound card
+ * still plays in real time (silently), and the position, the end and looping
+ * behave the same with or without one.
  *
- * Every public method is thread-safe. `update()` and `take_frame()` are
- * meant for one thread, the render loop, which also owns the texture the
- * frames go to.
+ * Every public method is thread-safe. `update()` is meant for one thread,
+ * the render loop.
  */
 class playback {
  public:
-  static constexpr size_t kMaxQueuedFrames = 4;
   static constexpr size_t kMaxQueuedSamples = kAudioRate * kAudioChannels; // 1 s
   static constexpr double kAudioSyncTolerance = 0.05; // seconds
 
   /**
    * @brief Opens @p file (an already sandbox-validated path).
-   * @throws std::runtime_error when it is not a playable media file.
+   * @throws std::runtime_error when it is not a playable audio file.
    */
   playback(const std::filesystem::path& file, playback_options options);
 
@@ -96,7 +93,7 @@ class playback {
   playback(const playback&) = delete;
   playback& operator=(const playback&) = delete;
 
-  /// @brief Streams, size and duration of the file.
+  /// @brief Duration of the file.
   const media_info& info() const noexcept {
     return info_;
   }
@@ -128,39 +125,31 @@ class playback {
   std::string error() const;
 
   /**
-   * @brief Advances the player: picks the newest video frame that is due,
-   *        detects the end (looping or stopping), and returns the events
-   *        raised since the last call.
+   * @brief Advances the player: drops audio nobody will play, detects the
+   *        end (looping or stopping), and returns the events raised since
+   *        the last call.
    */
   std::vector<playback_event> update();
 
-  /// @brief Moves the newest due frame picked by `update()` into @p out.
-  /// @return False when no new frame was picked since the last call.
-  bool take_frame(video_frame& out);
-
-  /// @brief Blocks until a frame or audio is queued (not yet picked by
-  ///        `update()`), the file is fully decoded, or @p timeout_s passes
-  ///        (tests).
+  /// @brief Blocks until audio is queued, the file is fully decoded, or
+  ///        @p timeout_s passes (tests).
   /// @return True unless the timeout passed.
   bool wait_buffered(double timeout_s);
 
  private:
   struct shared_state {
     play_state state = play_state::stopped;
-    double base = 0.0;          // position at the last anchor
-    double wall_anchor = 0.0;   // clock() when playing started
-    std::deque<video_frame> frames;
-    std::deque<float> samples;  // interleaved stereo, starting at samples_pts
+    double base = 0.0; // position at the last anchor
+    double wall_anchor = 0.0; // clock() when playing started
+    std::deque<float> samples; // interleaved stereo, starting at samples_pts
     double samples_pts = 0.0;
-    double skip_until = 0.0;    // drop decoded data before this time (seek)
+    double skip_until = 0.0; // drop decoded data before this time (seek)
     std::optional<double> seek_to;
     bool eof = false;
-    double end_pts = 0.0;       // end of the last decoded frame/chunk
+    double end_pts = 0.0; // end of the last decoded chunk
     bool quit = false;
     bool loop = false;
     float volume = 1.0f;
-    std::optional<video_frame> current; // newest due frame not yet taken
-    bool preview_shown = false;         // first frame shown while not playing
     std::vector<playback_event> events;
     std::string error;
   };
@@ -174,7 +163,7 @@ class playback {
   size_t pull_audio(float* out, size_t frames);
 
   playback_options options_;
-  std::unique_ptr<media_decoder> decoder_;
+  std::unique_ptr<audio_decoder> decoder_;
   media_info info_;
   bison::synchronized<shared_state> state_;
   std::unique_ptr<audio_output> audio_out_;

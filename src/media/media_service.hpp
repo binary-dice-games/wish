@@ -1,12 +1,11 @@
 // MIT License © 2026 Binary Dice Games
 /// @file media_service.hpp
-/// @brief Per-session RMI service that plays audio/video files from the
-///        session sandbox on the server.
+/// @brief Per-session RMI service that plays audio files from the session
+///        sandbox on the server.
 #pragma once
 
 #include <context/context.hpp>
 #include <media/media_player.hpp>
-#include <server/renderer.hpp>
 
 #include "src/bison/bison_object.hpp"
 #include "src/bison/bison_sync.hpp"
@@ -36,7 +35,7 @@ using media_service_ptr = std::shared_ptr<media_service>;
  *
  * | Method  | Params | Result |
  * |---------|--------|--------|
- * | `open`  | `"name"`, `"src"`: string (required); `"autoplay"`, `"loop"`: bool; `"volume"`: float | `"id"`: the player's RMI object id, `"has_video"`, `"has_audio"`: bool, `"width"`, `"height"`: int32, `"duration"`: float |
+ * | `open`  | `"name"`, `"src"`: string (required); `"autoplay"`, `"loop"`: bool; `"volume"`: float | `"id"`: the player's RMI object id, `"duration"`: float |
  * | `close` | `"name"`: string | `"closed"`: bool |
  * | `list`  | – | `"players"`: list of names |
  *
@@ -46,7 +45,7 @@ using media_service_ptr = std::shared_ptr<media_service>;
  *   `upload_file`/`sync_resource_package`). It is resolved with
  *   `file_service::resolve_path()`: absolute paths are refused unless the
  *   server allows them, `..` escapes always are, and URLs are not fetched.
- *   The decoder then reads only that file (see `media_decoder`).
+ *   The decoder then reads only that file (see `audio_decoder`).
  * - At most `kMaxPlayers` players per session; names are at most
  *   `kMaxName` bytes. Opening an existing name replaces that player.
  * - Every player stops when the session ends.
@@ -106,11 +105,11 @@ class media_service : public bison::dynamic {
   bool empty() const;
 
   /**
-   * @brief Advances every player (frames, events). Render thread, with the
-   *        session locked.
-   * @return True when the session should be redrawn.
+   * @brief Advances every player and queues its events. Render thread,
+   *        with the session locked.
+   * @return True when the session should be redrawn (events to send).
    */
-  bool pump(const context& s, renderer& r);
+  bool pump(const context& s);
 
  private:
   bison::synchronized<std::filesystem::path> resource_dir_;
@@ -126,9 +125,9 @@ void register_media_service();
 /**
  * @brief Runs `media_service::pump()` for every session that has players,
  *        marking the ones that changed dirty. Called by the render loop on
- *        every iteration, whether or not a frame is drawn, so audio-only
- *        players still report their end.
+ *        every iteration, whether or not a frame is drawn, so players
+ *        report their end without waiting for a redraw.
  */
-void pump_sessions(renderer& r, const std::vector<sync_context_ptr>& sessions);
+void pump_sessions(const std::vector<sync_context_ptr>& sessions);
 
 } // namespace bdg::wish::media

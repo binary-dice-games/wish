@@ -1,7 +1,7 @@
 // MIT License © 2026 Binary Dice Games
 /// @file mpv.hpp
-/// @brief Server-side form for mpv, a media player: browse the client's files,
-///        upload media to the sandbox, and play it back on the server.
+/// @brief Server-side form for mpv, an audio player: browse the client's
+///        files, upload audio to the sandbox, and play it back on the server.
 #pragma once
 
 #include "modules/bdg/common/server/tool_form.hpp"
@@ -20,10 +20,10 @@
 
 namespace bdg::wish {
 
-/// @brief Media player window: a **Local Machine** list (client-driven, like
-///        mc's local panel), the sandbox's **Library** of media files, and a
-///        player with a `Video` widget, a seek bar, transport buttons, volume
-///        and loop.
+/// @brief Audio player window: a **Local Machine** list (client-driven, like
+///        mc's local panel), the sandbox's **Library** of audio files, and a
+///        player with the title, a seek bar, transport buttons, volume and
+///        loop.
 ///
 /// The form owns the UI and the library (it scans the sandbox itself). It
 /// never decodes anything: playback runs in the server's media service, and
@@ -40,8 +40,7 @@ namespace bdg::wish {
 ///     (`media`), then call refresh_library(); when `play`, open the first
 ///     one as in on_open_requested.
 ///   - `on_open_requested` `{path, player, loop, volume}` -- open sandbox file
-///     `path` as media player `player` (the name the Video widget shows) and
-///     play it.
+///     `path` as media player `player` and play it.
 ///   - `on_control` `{action, value}` -- `action` is `"play"`, `"pause"`,
 ///     `"stop"`, `"seek"` (value: seconds), `"volume"` (0..1), `"loop"` (0/1)
 ///     or `"close"` (the file is about to be removed).
@@ -49,8 +48,8 @@ namespace bdg::wish {
 ///
 /// RMI methods (called by the client):
 ///   - `update_local_listing` `{path, files: [{name, type, size}]}`
-///   - `update_status` `{state, position, duration, has_video, has_audio,
-///     audio_output}` -- the open player's status (see media_player).
+///   - `update_status` `{state, position, duration, audio_output}` -- the
+///     open player's status (see media_player).
 ///   - `media_unavailable` `{}` -- the server plays no media.
 ///   - `refresh_library` `{}` -- rescan the sandbox.
 class mpv : public common::tool_form {
@@ -58,10 +57,12 @@ class mpv : public common::tool_form {
   explicit mpv(bison::dynamic&& base);
   ~mpv() override;
 
-  /// File extensions the Library and the Local list show (lower case).
+  /// Whether @p name has an extension of an audio format the server plays
+  /// (WAV, FLAC, MP3, Ogg Vorbis; case-insensitive). The Library and the
+  /// Local list show only those files.
   static bool is_media_name(const std::string& name);
 
-  /// Media files under @p root (relative, '/'-separated, sorted), skipping
+  /// Audio files under @p root (relative, '/'-separated, sorted), skipping
   /// the session's built-in `res/` and tools' `private/` folders.
   static std::vector<std::pair<std::string, uintmax_t>> scan_library(const std::filesystem::path& root);
 
@@ -103,11 +104,11 @@ class mpv : public common::tool_form {
   // Widgets
   ui_element_ptr local_path_, local_table_, local_selected_;
   ui_element_ptr library_table_, library_count_;
-  ui_element_ptr now_playing_, video_, seek_, time_, status_, volume_, loop_;
+  ui_element_ptr now_playing_, seek_, time_, status_, volume_, loop_;
   ui_element_ptr play_btn_, unavailable_;
   bison::key_t local_path_id_{}, local_table_id_{}, up_id_{}, upload_id_{}, upload_play_id_{};
   bison::key_t library_table_id_{}, lib_play_id_{}, lib_remove_id_{}, lib_refresh_id_{};
-  bison::key_t play_id_{}, stop_id_{}, seek_id_{}, volume_id_{}, loop_id_{}, video_id_{};
+  bison::key_t play_id_{}, stop_id_{}, seek_id_{}, volume_id_{}, loop_id_{};
 
   // State
   std::string local_dir_;

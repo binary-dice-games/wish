@@ -1,10 +1,9 @@
 // MIT License © 2026 Binary Dice Games
 /// @file media_player.hpp
-/// @brief One named audio/video player of a session, exposed over RMI.
+/// @brief One named audio player of a session, exposed over RMI.
 #pragma once
 
 #include <media/playback.hpp>
-#include <server/renderer.hpp>
 
 #include "src/bison/bison_object.hpp"
 #include "src/bison/bison_sync.hpp"
@@ -23,7 +22,7 @@ class media_player;
 using media_player_ptr = std::shared_ptr<media_player>;
 
 /**
- * @brief A media file playing (or ready to play) on the server, created by
+ * @brief An audio file playing (or ready to play) on the server, created by
  *        `media_service::open()` and reachable by the client as an RMI
  *        object of class `"__WishMediaPlayer"`.
  *
@@ -37,7 +36,7 @@ using media_player_ptr = std::shared_ptr<media_player>;
  * | `seek`       | `"seconds"`: float      | –      |
  * | `set_volume` | `"volume"`: float (0..1) | –      |
  * | `set_loop`   | `"loop"`: bool           | –      |
- * | `status`     | –                        | `"state"` int32 (`play_state`), `"state_name"`, `"position"`/`"duration"` float (seconds), `"width"`/`"height"` int32, `"has_video"`/`"has_audio"`/`"loop"`/`"audio_output"` bool, `"volume"` float, `"error"` string |
+ * | `status`     | –                        | `"state"` int32 (`play_state`), `"state_name"`, `"position"`/`"duration"` float (seconds), `"loop"`/`"audio_output"` bool, `"volume"` float, `"error"` string |
  *
  * ## Events (to the client's proxy of this object)
  *
@@ -61,7 +60,7 @@ class media_player : public bison::dynamic {
   media_player(const media_player&) = delete;
   media_player& operator=(const media_player&) = delete;
 
-  /// @brief The name widgets use to show this player (`Video.player`).
+  /// @brief The name the player was opened under (unique per session).
   const std::string& name() const noexcept {
     return name_;
   }
@@ -83,20 +82,13 @@ class media_player : public bison::dynamic {
   bison::dynamic status() const;
 
   /**
-   * @brief Advances playback and uploads the newest due frame to this
-   *        player's texture; queues events for the client. Render thread,
-   *        session locked.
-   * @return True when something on screen or for the client changed.
+   * @brief Advances playback and queues its events for the client. Render
+   *        thread, session locked.
+   * @return True when an event was raised.
    */
-  bool pump(const context& s, renderer& r);
+  bool pump(const context& s);
 
-  /// @brief Texture holding the current video frame; null before the first
-  ///        frame, without video, or on a headless renderer. Render thread.
-  const dynamic_texture_ptr& texture() const noexcept {
-    return texture_;
-  }
-
-  /// @brief Stops playback and frees the decoder, device and texture.
+  /// @brief Stops playback and frees the decoder and the audio device.
   void close();
 
  private:
@@ -105,8 +97,6 @@ class media_player : public bison::dynamic {
   std::string name_;
   bison::key_t rmi_id_{};
   bison::synchronized<std::shared_ptr<playback>> pb_;
-  dynamic_texture_ptr texture_;
-  video_frame frame_; // reused upload buffer
 };
 
 /// @brief Registers the `__WishMediaPlayer` class in the `"wish"` namespace.

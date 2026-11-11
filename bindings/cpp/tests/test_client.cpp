@@ -689,8 +689,6 @@ TEST(WishCppMediaTest, OpensPlaysAndHearsTheEnd) {
   });
   s.server->stop();
   EXPECT_TRUE(has);
-  EXPECT_TRUE(st.has_audio);
-  EXPECT_FALSE(st.has_video);
   EXPECT_NEAR(st.duration, 0.3, 0.05);
   EXPECT_EQ(st.state, wish::media_state::stopped);
   EXPECT_TRUE(ended);

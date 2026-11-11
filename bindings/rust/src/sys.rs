@@ -109,10 +109,6 @@ pub struct wish_media_status {
     pub duration: f64,
     pub volume: f32,
     pub state: i32,
-    pub width: i32,
-    pub height: i32,
-    pub has_video: i32,
-    pub has_audio: i32,
     pub loop_: i32,
     pub audio_output: i32,
 }

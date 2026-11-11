@@ -154,7 +154,7 @@ class wish_app_host {
 
   // ── Media playback ──────────────────────────────────────────────────────
   //
-  // Audio/video played by the server from the session sandbox. Not pure: a
+  // Audio played by the server from the session sandbox. Not pure: a
   // host without it inherits these defaults, which report it unavailable.
 
   /// @copydoc bdg::wish::client::has_media

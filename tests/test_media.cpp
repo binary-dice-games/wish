@@ -1,18 +1,13 @@
 // MIT License © 2026 Binary Dice Games
-// Tests for server-side media playback (src/media/): the FFmpeg decoder, the
-// playback state machine, the per-session media service and its sandbox
-// rules, and frame upload through a renderer's dynamic textures.
+// Tests for server-side audio playback (src/media/): the miniaudio decoder,
+// the playback state machine, the per-session media service and its sandbox
+// rules, and the client API over RMI.
 #include <gtest/gtest.h>
-
-#include "media_test_files.hpp"
 
 #include <auth/local_auth_module.hpp>
 #include <client/client.hpp>
 #include <context/context.hpp>
-#include <imgui/imgui_renderer.hpp>
-#include <imgui/imgui_ui_renderer.hpp>
-#include <ui/ui_importer.hpp>
-#include <media/media_decoder.hpp>
+#include <media/audio_decoder.hpp>
 #include <media/media_service.hpp>
 #include <media/playback.hpp>
 #include <server/registry.hpp>
@@ -21,12 +16,11 @@
 
 #include "src/bison/bison_common.hpp"
 
-#include <imgui.h>
-#include <imgui_internal.h>
 #include "src/rmi/rmi.hpp"
 #include "src/rmi/shared/ids.hpp"
 
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -45,7 +39,30 @@ namespace fs = std::filesystem;
 
 namespace {
 
-constexpr int kFps = 25;
+/// @brief Writes a 16-bit PCM WAV of @p frames frames; every channel of
+///        frame @p i holds @p sample(i).
+void write_wav(const fs::path& path, uint32_t rate, uint16_t channels, uint32_t frames,
+    const std::function<int16_t(uint32_t)>& sample) {
+  const uint32_t data_bytes = frames * channels * 2;
+  std::ofstream out(path, std::ios::binary);
+  auto u32 = [&](uint32_t v) { out.write(reinterpret_cast<const char*>(&v), 4); };
+  auto u16 = [&](uint16_t v) { out.write(reinterpret_cast<const char*>(&v), 2); };
+  out.write("RIFF", 4);
+  u32(36 + data_bytes);
+  out.write("WAVEfmt ", 8);
+  u32(16);
+  u16(1); // PCM
+  u16(channels);
+  u32(rate);
+  u32(rate * channels * 2);
+  u16(static_cast<uint16_t>(channels * 2));
+  u16(16);
+  out.write("data", 4);
+  u32(data_bytes);
+  for (uint32_t i = 0; i < frames; ++i)
+    for (uint16_t c = 0; c < channels; ++c)
+      u16(static_cast<uint16_t>(sample(i)));
+}
 
 // A scratch directory unique to the running test (ctest runs every test in
 // its own process, in parallel).
@@ -64,33 +81,30 @@ class MediaTest : public ::testing::Test {
     fs::remove_all(dir_, ec);
   }
 
-  // 1 s of red, then 1 s of green, 64x48 at 25 fps.
-  fs::path video() {
-    auto p = dir_ / "red_green.mkv";
-    if (!fs::exists(p))
-      wish_test::write_red_green_video(p, 64, 48, kFps, kFps, kFps);
-    return p;
-  }
-
+  /// A quiet 440 Hz stereo 48 kHz sine tone of @p seconds, as "tone.wav".
   fs::path tone(double seconds = 1.0) {
     auto p = dir_ / "tone.wav";
     if (!fs::exists(p))
-      wish_test::write_wav(p, seconds);
+      write_wav(p, 48000, 2, static_cast<uint32_t>(seconds * 48000), [](uint32_t i) {
+        return static_cast<int16_t>(std::sin(2.0 * 3.14159265358979 * 440.0 * i / 48000) * 8000.0);
+      });
     return p;
+  }
+
+  /// 2 s of stereo 48 kHz whose sample i is `ramp_value(i)`, as "ramp.wav":
+  /// the value at a position tells where the decoder is.
+  fs::path ramp() {
+    auto p = dir_ / "ramp.wav";
+    if (!fs::exists(p))
+      write_wav(p, 48000, 2, 96000, [](uint32_t i) { return static_cast<int16_t>(i % 30000); });
+    return p;
+  }
+  static float ramp_value(uint32_t frame) {
+    return static_cast<float>(frame % 30000) / 32768.0f;
   }
 
   fs::path dir_;
 };
-
-bool is_red(const media::video_frame& f) {
-  const auto* px = &f.rgba[(f.height / 2 * f.width + f.width / 2) * 4];
-  return px[0] > 200 && px[1] < 60 && px[2] < 60;
-}
-
-bool is_green(const media::video_frame& f) {
-  const auto* px = &f.rgba[(f.height / 2 * f.width + f.width / 2) * 4];
-  return px[0] < 60 && px[1] > 200 && px[2] < 60;
-}
 
 // A clock the test advances by hand, so positions are exact.
 struct manual_clock {
@@ -114,17 +128,14 @@ media::playback_options silent(const manual_clock& clock) {
 // Advances @p clock in small steps, waiting for the decoder at each, until
 // @p done or @p max_seconds of media time passed. Collects every event.
 template <class Pred>
-std::vector<media::playback_event> advance_until(media::playback& pb, const manual_clock& clock, Pred done,
-    media::video_frame* last_frame = nullptr, double max_seconds = 5.0) {
+std::vector<media::playback_event> advance_until(
+    media::playback& pb, const manual_clock& clock, Pred done, double max_seconds = 5.0) {
   std::vector<media::playback_event> all;
-  media::video_frame scratch;
-  media::video_frame& frame = last_frame ? *last_frame : scratch;
   for (double t = 0; t < max_seconds && !done(); t += 0.02) {
     pb.wait_buffered(2.0);
     clock.advance(0.02);
     for (auto& e : pb.update())
       all.push_back(e);
-    pb.take_frame(frame); // like the render loop does
   }
   return all;
 }
@@ -138,97 +149,80 @@ bool has_event(const std::vector<media::playback_event>& events, media::playback
 
 } // namespace
 
-// ── media_decoder ───────────────────────────────────────────────────────────
+// ── audio_decoder ───────────────────────────────────────────────────────────
 
-TEST_F(MediaTest, DecoderReadsVideoInfoAndFrames) {
-  media::media_decoder d{video()};
-  const auto& info = d.info();
-  EXPECT_TRUE(info.has_video);
-  EXPECT_FALSE(info.has_audio);
-  EXPECT_EQ(info.width, 64);
-  EXPECT_EQ(info.height, 48);
-  EXPECT_NEAR(info.duration, 2.0, 0.1);
-
-  media::video_frame v;
-  media::audio_chunk a;
-  ASSERT_EQ(d.decode(v, a), media::media_decoder::result::video);
-  EXPECT_EQ(v.width, 64);
-  EXPECT_EQ(v.rgba.size(), 64u * 48u * 4u);
-  EXPECT_NEAR(v.pts, 0.0, 1e-3);
-  EXPECT_TRUE(is_red(v));
-
-  d.seek(1.5);
-  // The keyframe at 1.0 s is green; everything after it too.
-  ASSERT_EQ(d.decode(v, a), media::media_decoder::result::video);
-  EXPECT_GE(v.pts, 0.99);
-  EXPECT_TRUE(is_green(v));
-
-  int frames = 1;
-  while (d.decode(v, a) != media::media_decoder::result::eof)
-    ++frames;
-  EXPECT_GE(frames, 20); // the rest of the second second
-}
-
-TEST_F(MediaTest, DecoderResamplesAudioToStereo48k) {
-  media::media_decoder d{tone(0.5)};
-  EXPECT_TRUE(d.info().has_audio);
-  EXPECT_FALSE(d.info().has_video);
-  EXPECT_NEAR(d.info().duration, 0.5, 0.05);
-  media::video_frame v;
+TEST_F(MediaTest, DecoderReadsAWavInChunks) {
+  media::audio_decoder d{tone(0.5)};
+  EXPECT_NEAR(d.info().duration, 0.5, 1e-3);
   media::audio_chunk a;
   size_t samples = 0;
-  for (;;) {
-    const auto r = d.decode(v, a);
-    if (r == media::media_decoder::result::eof)
-      break;
-    ASSERT_EQ(r, media::media_decoder::result::audio);
+  double expected_pts = 0.0;
+  while (d.decode(a)) {
     EXPECT_EQ(a.samples.size() % media::kAudioChannels, 0u);
+    EXPECT_LE(a.samples.size(), media::kAudioChunkFrames * media::kAudioChannels);
+    EXPECT_NEAR(a.pts, expected_pts, 1e-6) << "chunks follow each other";
+    expected_pts += static_cast<double>(a.samples.size() / media::kAudioChannels) / media::kAudioRate;
     samples += a.samples.size();
   }
-  EXPECT_NEAR(static_cast<double>(samples) / media::kAudioChannels / media::kAudioRate, 0.5, 0.02);
+  EXPECT_TRUE(a.samples.empty());
+  EXPECT_EQ(samples, 24000u * media::kAudioChannels);
 }
 
-TEST_F(MediaTest, DecoderRejectsFilesThatAreNotMedia) {
-  std::ofstream(dir_ / "notes.txt") << "just some text, not a video\n";
-  EXPECT_THROW(media::media_decoder{dir_ / "notes.txt"}, std::runtime_error);
-  EXPECT_THROW(media::media_decoder{dir_ / "missing.mp4"}, std::runtime_error);
-}
-
-TEST_F(MediaTest, DecoderNeverOpensFilesAFileReferences) {
-  // A concat list naming a real file next to it: the demuxer must not be
-  // able to follow it (that is how a playlist could escape the sandbox).
-  tone();
-  std::ofstream(dir_ / "list.ffconcat") << "ffconcat version 1.0\nfile 'tone.wav'\n";
-  bool refused = false;
-  try {
-    media::media_decoder d{dir_ / "list.ffconcat"};
-    media::video_frame v;
-    media::audio_chunk a;
-    refused = d.decode(v, a) == media::media_decoder::result::eof;
-  } catch (const std::runtime_error&) {
-    refused = true;
+TEST_F(MediaTest, DecoderConvertsMonoAndOtherRatesToStereo48k) {
+  // 1 s of mono 22.05 kHz: comes out as 1 s of stereo 48 kHz.
+  write_wav(dir_ / "mono.wav", 22050, 1, 22050, [](uint32_t) { return int16_t{16384}; });
+  media::audio_decoder d{dir_ / "mono.wav"};
+  EXPECT_NEAR(d.info().duration, 1.0, 0.01);
+  media::audio_chunk a;
+  size_t frames = 0;
+  float left = 0, right = 0;
+  while (d.decode(a)) {
+    frames += a.samples.size() / media::kAudioChannels;
+    left = a.samples[0];
+    right = a.samples[1];
   }
-  EXPECT_TRUE(refused);
+  EXPECT_NEAR(static_cast<double>(frames) / media::kAudioRate, 1.0, 0.01);
+  EXPECT_NEAR(left, 0.5f, 0.05f) << "mono goes to both channels";
+  EXPECT_NEAR(right, left, 1e-4f);
+}
+
+TEST_F(MediaTest, DecoderSeeksSampleAccurately) {
+  media::audio_decoder d{ramp()};
+  EXPECT_NEAR(d.info().duration, 2.0, 1e-3);
+  d.seek(0.5);
+  media::audio_chunk a;
+  ASSERT_TRUE(d.decode(a));
+  EXPECT_NEAR(a.pts, 0.5, 1e-6);
+  EXPECT_NEAR(a.samples[0], ramp_value(24000), 1e-4f);
+  d.seek(0.0);
+  ASSERT_TRUE(d.decode(a));
+  EXPECT_NEAR(a.pts, 0.0, 1e-6);
+  EXPECT_NEAR(a.samples[2], ramp_value(1), 1e-4f);
+}
+
+TEST_F(MediaTest, DecoderRejectsFilesThatAreNotAudio) {
+  std::ofstream(dir_ / "notes.txt") << "just some text, not audio\n";
+  EXPECT_THROW(media::audio_decoder{dir_ / "notes.txt"}, std::runtime_error);
+  std::ofstream(dir_ / "movie.mp4") << std::string(4096, '\x42');
+  EXPECT_THROW(media::audio_decoder{dir_ / "movie.mp4"}, std::runtime_error);
+  EXPECT_THROW(media::audio_decoder{dir_ / "missing.mp3"}, std::runtime_error);
 }
 
 // ── playback ────────────────────────────────────────────────────────────────
 
-TEST_F(MediaTest, PlaybackShowsTheFirstFrameBeforePlaying) {
+TEST_F(MediaTest, PlaybackStartsStoppedAndBuffersAhead) {
   manual_clock clock;
-  media::playback pb{video(), silent(clock)};
+  media::playback pb{tone(2.0), silent(clock)};
   EXPECT_EQ(pb.state(), media::play_state::stopped);
+  EXPECT_NEAR(pb.info().duration, 2.0, 1e-3);
   ASSERT_TRUE(pb.wait_buffered(5.0));
   EXPECT_TRUE(pb.update().empty());
-  media::video_frame f;
-  ASSERT_TRUE(pb.take_frame(f));
-  EXPECT_TRUE(is_red(f));
-  pb.update();
-  EXPECT_FALSE(pb.take_frame(f)) << "shown once, not every update";
+  EXPECT_DOUBLE_EQ(pb.position(), 0.0);
 }
 
 TEST_F(MediaTest, PlaybackFollowsTheClockAndSeeks) {
   manual_clock clock;
-  media::playback pb{video(), silent(clock)};
+  media::playback pb{tone(2.0), silent(clock)};
   pb.play();
   EXPECT_EQ(pb.state(), media::play_state::playing);
   auto events = pb.update();
@@ -236,13 +230,8 @@ TEST_F(MediaTest, PlaybackFollowsTheClockAndSeeks) {
   EXPECT_EQ(events[0].what, media::playback_event::kind::state_changed);
   EXPECT_EQ(events[0].state, media::play_state::playing);
 
-  media::video_frame f;
-  advance_until(pb, clock, [&] { return pb.position() >= 0.5; }, &f);
+  advance_until(pb, clock, [&] { return pb.position() >= 0.5; });
   EXPECT_NEAR(pb.position(), 0.5, 0.03);
-  ASSERT_FALSE(f.rgba.empty());
-  EXPECT_TRUE(is_red(f));
-  EXPECT_GT(f.pts, 0.4) << "frames keep up with the clock";
-  EXPECT_LE(f.pts, pb.position() + 1e-3);
 
   pb.pause();
   const double paused_at = pb.position();
@@ -253,9 +242,7 @@ TEST_F(MediaTest, PlaybackFollowsTheClockAndSeeks) {
   pb.seek(1.5);
   EXPECT_DOUBLE_EQ(pb.position(), 1.5);
   ASSERT_TRUE(pb.wait_buffered(5.0));
-  pb.update();
-  ASSERT_TRUE(pb.take_frame(f));
-  EXPECT_TRUE(is_green(f));
+  EXPECT_EQ(pb.state(), media::play_state::paused);
 
   pb.stop();
   EXPECT_EQ(pb.state(), media::play_state::stopped);
@@ -264,12 +251,12 @@ TEST_F(MediaTest, PlaybackFollowsTheClockAndSeeks) {
 
 TEST_F(MediaTest, PlaybackEndsOrLoops) {
   manual_clock clock;
-  media::playback pb{video(), silent(clock)};
+  media::playback pb{tone(1.0), silent(clock)};
   pb.play();
   auto events = advance_until(pb, clock, [&] { return pb.state() == media::play_state::ended; });
   EXPECT_EQ(pb.state(), media::play_state::ended);
   EXPECT_TRUE(has_event(events, media::playback_event::kind::ended));
-  EXPECT_NEAR(pb.position(), 2.0, 0.1);
+  EXPECT_NEAR(pb.position(), 1.0, 0.05);
 
   // play() from the end restarts; with loop on, the end wraps around.
   pb.set_loop(true);
@@ -315,69 +302,32 @@ TEST_F(MediaTest, PlaybackOnTheDefaultDeviceEndsInRealTime) {
 
 TEST_F(MediaTest, PlaybackClampsVolumeAndSeek) {
   manual_clock clock;
-  media::playback pb{video(), silent(clock)};
+  media::playback pb{tone(2.0), silent(clock)};
   pb.set_volume(3.0f);
   EXPECT_FLOAT_EQ(pb.volume(), 1.0f);
   pb.set_volume(-1.0f);
   EXPECT_FLOAT_EQ(pb.volume(), 0.0f);
   pb.seek(99.0);
-  EXPECT_NEAR(pb.position(), 2.0, 0.1);
+  EXPECT_NEAR(pb.position(), 2.0, 1e-3);
   pb.seek(-5.0);
   EXPECT_DOUBLE_EQ(pb.position(), 0.0);
 }
 
 // ── media_service ───────────────────────────────────────────────────────────
 
-namespace {
-
-// Records what a player uploads to its texture.
-struct fake_texture : wish::dynamic_texture {
-  fake_texture(int w, int h) : w_(w), h_(h) {}
-  int width() const override {
-    return w_;
-  }
-  int height() const override {
-    return h_;
-  }
-  void update(const uint8_t* rgba, int pitch) override {
-    ++uploads;
-    last.width = w_;
-    last.height = h_;
-    last.rgba.assign(rgba, rgba + static_cast<size_t>(pitch) * h_);
-  }
-  void* native_handle() const override {
-    return nullptr;
-  }
-  int w_, h_;
-  int uploads = 0;
-  media::video_frame last;
-};
-
-struct texture_renderer : wish::null_renderer {
-  wish::dynamic_texture_ptr create_dynamic_texture(int w, int h) override {
-    auto t = std::make_shared<fake_texture>(w, h);
-    textures.push_back(t);
-    return t;
-  }
-  std::vector<std::shared_ptr<fake_texture>> textures;
-};
-
-} // namespace
-
 TEST_F(MediaTest, ServiceOpensOnlyFilesInTheSandbox) {
-  video();
   tone();
   media::playback_options quiet;
   quiet.audio_device = false;
   auto svc = media::media_service::instantiate(dir_, false, quiet);
-  EXPECT_NO_THROW(svc->open("intro", "red_green.mkv"));
+  EXPECT_NO_THROW(svc->open("intro", "tone.wav"));
   EXPECT_NE(svc->find("intro"), nullptr);
 
-  EXPECT_THROW(svc->open("x", "../red_green.mkv"), std::invalid_argument);
-  EXPECT_THROW(svc->open("x", (dir_ / "red_green.mkv").string()), std::invalid_argument) << "absolute";
-  EXPECT_THROW(svc->open("x", "https://example.com/a.mp4"), std::invalid_argument);
+  EXPECT_THROW(svc->open("x", "../tone.wav"), std::invalid_argument);
+  EXPECT_THROW(svc->open("x", (dir_ / "tone.wav").string()), std::invalid_argument) << "absolute";
+  EXPECT_THROW(svc->open("x", "https://example.com/a.mp3"), std::invalid_argument);
   EXPECT_THROW(svc->open("x", "file:///etc/passwd"), std::invalid_argument);
-  EXPECT_THROW(svc->open("x", "nope.mp4"), std::invalid_argument);
+  EXPECT_THROW(svc->open("x", "nope.mp3"), std::invalid_argument);
   EXPECT_THROW(svc->open("", "tone.wav"), std::invalid_argument);
   EXPECT_THROW(svc->open(std::string(200, 'n'), "tone.wav"), std::invalid_argument);
   std::ofstream(dir_ / "readme.txt") << "not media";
@@ -428,140 +378,29 @@ TEST_F(MediaTest, ServiceOpenHonorsAutoplayLoopAndVolume) {
   EXPECT_EQ(st.get_as<std::string>("state_name"_key, ""), "playing");
   EXPECT_TRUE(st.get_as<bool>("loop"_key, false));
   EXPECT_FLOAT_EQ(st.get_as<float>("volume"_key, 0), 0.25f);
-  EXPECT_TRUE(st.get_as<bool>("has_audio"_key, false));
   EXPECT_FALSE(st.get_as<bool>("audio_output"_key, true));
+  EXPECT_EQ(st.findField("has_video"_key), nullptr) << "audio only: no video fields";
+  EXPECT_EQ(st.findField("width"_key), nullptr);
 }
 
-TEST_F(MediaTest, PumpUploadsFramesAndQueuesEvents) {
-  video();
+TEST_F(MediaTest, PumpQueuesPlayerEventsForTheClient) {
+  tone();
   manual_clock clock;
   auto svc = media::media_service::instantiate(dir_, false, silent(clock));
-  auto player = svc->open("intro", "red_green.mkv");
+  auto player = svc->open("intro", "tone.wav");
   player->set_rmi_id(bdg::bison::key_t{1234u});
   wish::context ctx{rmi::shared::generate_id()};
-  texture_renderer r;
 
-  ASSERT_TRUE(player->engine()->wait_buffered(5.0));
-  EXPECT_TRUE(svc->pump(ctx, r));
-  ASSERT_EQ(r.textures.size(), 1u);
-  EXPECT_EQ(r.textures[0]->width(), 64);
-  EXPECT_EQ(r.textures[0]->uploads, 1);
-  EXPECT_TRUE(is_red(r.textures[0]->last));
-  EXPECT_EQ(player->texture(), r.textures[0]);
-
+  EXPECT_FALSE(svc->pump(ctx)) << "nothing happened yet";
   player->engine()->play();
-  player->engine()->seek(1.5);
-  ASSERT_TRUE(player->engine()->wait_buffered(5.0));
-  svc->pump(ctx, r);
-  EXPECT_EQ(r.textures.size(), 1u) << "same size: the texture is reused";
-  EXPECT_TRUE(is_green(r.textures[0]->last));
-
-  ASSERT_FALSE(ctx.pending_events.empty());
+  EXPECT_TRUE(svc->pump(ctx));
+  ASSERT_EQ(ctx.pending_events.size(), 1u);
   EXPECT_EQ(ctx.pending_events[0].id, bdg::bison::key_t{1234u});
   EXPECT_EQ(ctx.pending_events[0].event_name, bdg::bison::key_t{"state_changed"});
   EXPECT_EQ(ctx.pending_events[0].payload.get_as<std::string>("state_name"_key, ""), "playing");
 
   svc->close("intro");
-  EXPECT_EQ(player->texture(), nullptr);
-  EXPECT_FALSE(svc->pump(ctx, r));
-}
-
-// ── Video widget layout ─────────────────────────────────────────────────────
-
-TEST(VideoLayout, NaturalSizeFollowsTheVideo) {
-  auto box = wish::layout_video(0, 0, ImVec2(1000, 1000), ImVec2(640, 360), true);
-  EXPECT_FLOAT_EQ(box.size.x, 640);
-  EXPECT_FLOAT_EQ(box.size.y, 360);
-  EXPECT_FLOAT_EQ(box.image_min.x, 0);
-  EXPECT_FLOAT_EQ(box.image_max.y, 360);
-}
-
-TEST(VideoLayout, UnknownVideoIs320Wide16By9) {
-  auto box = wish::layout_video(0, 0, ImVec2(1000, 1000), ImVec2(0, 0), true);
-  EXPECT_FLOAT_EQ(box.size.x, 320);
-  EXPECT_FLOAT_EQ(box.size.y, 180);
-}
-
-TEST(VideoLayout, WidthAloneKeepsTheAspectRatio) {
-  auto box = wish::layout_video(320, 0, ImVec2(1000, 1000), ImVec2(640, 480), true);
-  EXPECT_FLOAT_EQ(box.size.y, 240);
-}
-
-TEST(VideoLayout, LetterboxesOrStretches) {
-  // A 16:9 video in a square 200x200 box: bars above and below.
-  auto box = wish::layout_video(200, 200, ImVec2(1000, 1000), ImVec2(1600, 900), true);
-  EXPECT_FLOAT_EQ(box.image_min.x, 0);
-  EXPECT_FLOAT_EQ(box.image_max.x, 200);
-  EXPECT_NEAR(box.image_min.y, (200 - 112.5f) / 2, 1e-3);
-  EXPECT_NEAR(box.image_max.y - box.image_min.y, 112.5f, 1e-3);
-  // A 4:3 video in a wide box: bars left and right.
-  box = wish::layout_video(400, 150, ImVec2(1000, 1000), ImVec2(640, 480), true);
-  EXPECT_NEAR(box.image_max.x - box.image_min.x, 200, 1e-3);
-  EXPECT_NEAR(box.image_min.x, 100, 1e-3);
-  // keep_aspect off: the frame fills the box.
-  box = wish::layout_video(400, 150, ImVec2(1000, 1000), ImVec2(640, 480), false);
-  EXPECT_FLOAT_EQ(box.image_max.x, 400);
-  EXPECT_FLOAT_EQ(box.image_max.y, 150);
-}
-
-TEST(VideoLayout, MinusOneFillsTheAvailableSpace) {
-  auto box = wish::layout_video(-1, -1, ImVec2(800, 300), ImVec2(640, 360), true);
-  EXPECT_FLOAT_EQ(box.size.x, 800);
-  EXPECT_FLOAT_EQ(box.size.y, 300);
-}
-
-// ── Drawing: Video / Image media:// with a real imgui_renderer ─────────────
-
-TEST_F(MediaTest, VideoAndMediaImageDrawThePlayersTexture) {
-  video();
-  ImGuiContext* ctx = ImGui::CreateContext();
-  ImGuiIO& io = ImGui::GetIO();
-  io.IniFilename = nullptr;
-  io.DisplaySize = ImVec2(800.0f, 600.0f);
-  io.DeltaTime = 1.0f / 60.0f;
-  io.BackendFlags |= ImGuiBackendFlags_RendererHasTextures; // like SDL3/web
-  {
-    wish::imgui_renderer r;
-    wish::context sess{rmi::shared::generate_id()};
-    manual_clock clock;
-    sess.media_service = media::media_service::instantiate(dir_, false, silent(clock));
-    auto player = sess.media_service->open("clip", "red_green.mkv");
-    ASSERT_TRUE(player->engine()->wait_buffered(5.0));
-    sess.media_service->pump(sess, r);
-    ASSERT_NE(player->texture(), nullptr) << "the renderer made a dynamic texture";
-    auto* tex = static_cast<ImTextureData*>(player->texture()->native_handle());
-    EXPECT_EQ(tex->Width, 64);
-    EXPECT_GT(static_cast<unsigned char*>(tex->GetPixelsAt(32, 24))[0], 200) << "the red frame";
-
-    auto video_node = wish::import_json(R"({"type":"Video","player":"clip","width":128,"height":96})");
-    auto image_node = wish::import_json(R"({"type":"Image","src":"media://clip","width":32,"height":24})");
-    auto draws_texture = [&](ImDrawList* dl) {
-      for (const auto& cmd : dl->CmdBuffer)
-        if (cmd.TexRef._TexData == tex)
-          return true;
-      return false;
-    };
-    for (auto* node : {&video_node, &image_node}) {
-      r.begin_frame();
-      ImGui::SetNextWindowPos(ImVec2(0, 0));
-      ImGui::SetNextWindowSize(ImVec2(400, 300));
-      ImGui::Begin("MediaTestWindow");
-      r.render_node(*(*node)[""], sess);
-      // A backend resolves _TexData's id at draw time; a raw pointer passed
-      // as an id would draw an unknown (white) texture.
-      EXPECT_TRUE(draws_texture(ImGui::GetWindowDrawList()));
-      ImGui::End();
-      r.end_frame();
-    }
-
-    sess.media_service.reset(); // closes the player: its texture is retired
-    for (int i = 0; i < 3; ++i) { // ...and freed by the next frames
-      r.begin_frame();
-      r.end_frame();
-    }
-    EXPECT_TRUE(GImGui->UserTextures.empty());
-  }
-  ImGui::DestroyContext(ctx);
+  EXPECT_FALSE(svc->pump(ctx));
 }
 
 // ── Over RMI: wish::client ──────────────────────────────────────────────────
@@ -592,7 +431,8 @@ TEST_F(MediaTest, ClientPlaysAnUploadedFileAndHearsItsEvents) {
   rmi::transport::memory_server_transport transport;
   wish::server srv{transport, std::make_unique<wish::null_renderer>()};
   srv.start();
-  const std::string video_bytes = read_file(video());
+  write_wav(dir_ / "song.wav", 44100, 2, 88200, [](uint32_t i) { return static_cast<int16_t>(i % 1000); });
+  const std::string song_bytes = read_file(dir_ / "song.wav");
   const std::string tone_bytes = read_file(tone(0.3));
 
   bool has = false;
@@ -603,10 +443,10 @@ TEST_F(MediaTest, ClientPlaysAnUploadedFileAndHearsItsEvents) {
   media_test_client c{transport.connect()};
   c.body = [&](media_test_client& c) {
     has = c.has_media();
-    c.upload_file("clip.mkv", video_bytes).get();
+    c.upload_file("media/song.wav", song_bytes).get();
     c.upload_file("beep.wav", tone_bytes).get();
 
-    auto clip = c.open_media("clip", "clip.mkv").get();
+    auto clip = c.open_media("clip", "media/song.wav").get();
     EXPECT_EQ(clip.name(), "clip");
     opened = clip.status().get();
     clip.seek(1.5).get();
@@ -632,7 +472,7 @@ TEST_F(MediaTest, ClientPlaysAnUploadedFileAndHearsItsEvents) {
       refused_escape = e.what();
     }
     try {
-      c.open_media("x", "nope.mp4").get();
+      c.open_media("x", "nope.mp3").get();
     } catch (const std::exception& e) {
       refused_missing = e.what();
     }
@@ -648,11 +488,7 @@ TEST_F(MediaTest, ClientPlaysAnUploadedFileAndHearsItsEvents) {
   srv.stop();
 
   EXPECT_TRUE(has);
-  EXPECT_TRUE(opened.has_video);
-  EXPECT_FALSE(opened.has_audio);
-  EXPECT_EQ(opened.width, 64);
-  EXPECT_EQ(opened.height, 48);
-  EXPECT_NEAR(opened.duration, 2.0, 0.1);
+  EXPECT_NEAR(opened.duration, 2.0, 0.01);
   EXPECT_EQ(opened.state, wish::media_state::stopped);
   EXPECT_NEAR(after_seek.position, 1.5, 1e-3);
 
@@ -677,7 +513,7 @@ TEST_F(MediaTest, ClientWithoutServerMediaReportsItUnavailable) {
   c.body = [&](media_test_client& c) {
     has = c.has_media();
     try {
-      c.open_media("x", "a.mp4").get();
+      c.open_media("x", "a.mp3").get();
     } catch (const std::logic_error& e) {
       error = e.what();
     }

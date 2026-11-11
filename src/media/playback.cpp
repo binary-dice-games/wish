@@ -14,11 +14,8 @@ namespace bdg::wish::media {
 
 namespace {
 
-// Assumed length of the last video frame, for the end-of-file position.
-constexpr double kLastFrameDuration = 1.0 / 30.0;
-
-// Audio this far behind the position is dropped even without a device
-// pulling it, so a stalled sound card can't stall decoding with it.
+// Audio this far behind the position is dropped when no device pulls it (a
+// silent player), so decoding never stalls on a full buffer.
 constexpr double kStaleAudio = 0.5;
 
 double steady_seconds() {
@@ -47,7 +44,7 @@ const char* to_string(play_state s) {
 // ── Lifecycle ────────────────────────────────────────────────────────────────
 
 playback::playback(const std::filesystem::path& file, playback_options options)
-    : options_(std::move(options)), decoder_(std::make_unique<media_decoder>(file)), info_(decoder_->info()) {
+    : options_(std::move(options)), decoder_(std::make_unique<audio_decoder>(file)), info_(decoder_->info()) {
   if (!options_.clock)
     options_.clock = steady_seconds;
   {
@@ -55,7 +52,7 @@ playback::playback(const std::filesystem::path& file, playback_options options)
     s->loop = options_.loop;
     s->volume = std::clamp(options_.volume, 0.0f, 1.0f);
   }
-  if (info_.has_audio && options_.audio_device) {
+  if (options_.audio_device) {
     auto out = std::make_unique<audio_output>([this](float* dst, size_t frames) { return pull_audio(dst, frames); });
     if (out->ok())
       audio_out_ = std::move(out);
@@ -157,21 +154,6 @@ std::vector<playback_event> playback::update() {
     auto s = state_.wlock();
     const double pos = position_locked(*s);
 
-    if (s->state == play_state::playing) {
-      // Newest frame whose time has come; older due frames are skipped.
-      while (!s->frames.empty() && s->frames.front().pts <= pos + 1e-3) {
-        s->current = std::move(s->frames.front());
-        s->frames.pop_front();
-        s->preview_shown = true;
-        wake_decoder = true;
-      }
-    } else if (!s->preview_shown && !s->frames.empty()) {
-      // Not playing: show the frame at the position once (after open or a
-      // seek); it stays queued and becomes due again once playing.
-      s->current = s->frames.front();
-      s->preview_shown = true;
-    }
-
     if (!audio_out_ || s->state != play_state::playing) {
       // Nobody consumes audio: drop what's stale so decoding never stalls.
       while (s->samples.size() >= kAudioChannels && s->samples_pts < pos - kStaleAudio) {
@@ -182,7 +164,7 @@ std::vector<playback_event> playback::update() {
       }
     }
 
-    if (s->state == play_state::playing && s->eof && s->frames.empty() && pos >= s->end_pts) {
+    if (s->state == play_state::playing && s->eof && pos >= s->end_pts) {
       if (s->loop) {
         seek_locked(*s, 0.0);
         s->wall_anchor = now();
@@ -201,18 +183,9 @@ std::vector<playback_event> playback::update() {
   return events;
 }
 
-bool playback::take_frame(video_frame& out) {
-  auto s = state_.wlock();
-  if (!s->current)
-    return false;
-  out = std::move(*s->current);
-  s->current.reset();
-  return true;
-}
-
 bool playback::wait_buffered(double timeout_s) {
   return state_.wait_for(std::chrono::duration<double>(timeout_s),
-      [](const shared_state& s) { return !s.frames.empty() || !s.samples.empty() || s.eof; });
+      [](const shared_state& s) { return !s.samples.empty() || s.eof; });
 }
 
 // ── Internals (state_ locked by the caller) ──────────────────────────────────
@@ -242,18 +215,13 @@ void playback::seek_locked(shared_state& s, double seconds) {
   s.base = seconds;
   s.wall_anchor = now();
   s.seek_to = seconds;
-  s.frames.clear();
   s.samples.clear();
-  s.current.reset();
-  s.preview_shown = false;
   s.eof = false;
   s.end_pts = seconds;
 }
 
 bool playback::buffers_full(const shared_state& s) const {
-  if (s.frames.size() >= kMaxQueuedFrames)
-    return true;
-  return audio_out_ && s.samples.size() >= kMaxQueuedSamples;
+  return s.samples.size() >= kMaxQueuedSamples;
 }
 
 size_t playback::pull_audio(float* out, size_t frames) {
@@ -294,7 +262,6 @@ size_t playback::pull_audio(float* out, size_t frames) {
 // ── Decode thread ────────────────────────────────────────────────────────────
 
 void playback::decode_loop() {
-  video_frame video;
   audio_chunk audio;
   for (;;) {
     std::optional<double> seek_target;
@@ -318,34 +285,23 @@ void playback::decode_loop() {
         auto s = state_.wlock();
         if (!s->seek_to) {
           s->skip_until = *seek_target;
-          s->frames.clear();
           s->samples.clear();
         }
         continue;
       }
 
-      const auto r = decoder_->decode(video, audio);
+      const bool got = decoder_->decode(audio);
       auto s = state_.wlock();
       if (s->seek_to || s->quit)
         continue; // stale: the pending seek is handled next
-      switch (r) {
-        case media_decoder::result::video:
-          s->end_pts = std::max(s->end_pts, video.pts + kLastFrameDuration);
-          if (video.pts + 1e-3 < s->skip_until && !s->frames.empty() && s->frames.back().pts + 1e-3 < s->skip_until) {
-            // Seeking between keyframe and target: keep only the newest
-            // frame before the target, which is what shows at the target.
-            s->frames.back() = std::move(video);
-          } else {
-            s->frames.push_back(std::move(video));
-          }
-          notify = true;
-          break;
-        case media_decoder::result::audio: {
-          const size_t chunk_frames = audio.samples.size() / kAudioChannels;
-          const double dur = static_cast<double>(chunk_frames) / kAudioRate;
-          s->end_pts = std::max(s->end_pts, audio.pts + dur);
-          if (!audio_out_ || audio.pts + dur <= s->skip_until)
-            break; // silent player, or before the seek target
+      if (!got) {
+        s->eof = true;
+        notify = true;
+      } else {
+        const size_t chunk_frames = audio.samples.size() / kAudioChannels;
+        const double dur = static_cast<double>(chunk_frames) / kAudioRate;
+        s->end_pts = std::max(s->end_pts, audio.pts + dur);
+        if (audio.pts + dur > s->skip_until) { // else: before the seek target
           size_t skip = 0;
           if (audio.pts < s->skip_until)
             skip = std::min(chunk_frames, static_cast<size_t>((s->skip_until - audio.pts) * kAudioRate));
@@ -353,18 +309,12 @@ void playback::decode_loop() {
             s->samples_pts = audio.pts + static_cast<double>(skip) / kAudioRate;
           s->samples.insert(s->samples.end(), audio.samples.begin() + static_cast<std::ptrdiff_t>(skip * kAudioChannels),
               audio.samples.end());
-          break;
         }
-        case media_decoder::result::eof:
-          s->eof = true;
-          notify = true;
-          break;
       }
     } catch (const std::exception& e) {
       auto s = state_.wlock();
       s->error = e.what();
       s->eof = true;
-      s->frames.clear();
       s->samples.clear();
       set_state_locked(*s, play_state::error);
       s->events.push_back({playback_event::kind::error, play_state::error, e.what()});

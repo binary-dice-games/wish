@@ -44,10 +44,6 @@ struct media_status {
   media_state state = media_state::stopped;
   double position = 0.0; ///< Seconds.
   double duration = 0.0; ///< Seconds; 0 when the file doesn't say.
-  int32_t width = 0;     ///< Video size in pixels; 0 without video.
-  int32_t height = 0;
-  bool has_video = false;
-  bool has_audio = false;
   float volume = 1.0f;
   bool loop = false;
   bool audio_output = false; ///< False: the server has no sound card (silent).
@@ -55,12 +51,11 @@ struct media_status {
 };
 
 /**
- * @brief A media file opened on the server by `client::open_media()`.
+ * @brief An audio file opened on the server by `client::open_media()`.
  *
  * Copies share one player. Every call is asynchronous: it returns a future
  * that throws through `get()` when the player was closed or the session
- * ended. Show its video with a `Video` widget whose `player` field is
- * `name()`, or with `Image` and `src = "media://" + name()`.
+ * ended.
  *
  * Event handlers run on the client's event thread.
  */
@@ -80,7 +75,7 @@ class media_player {
     return state_ && state_->player && !state_->closed.load();
   }
 
-  /// @brief The name given to `open_media()`; widgets refer to it.
+  /// @brief The name given to `open_media()`.
   const std::string& name() const {
     return require().name;
   }
@@ -121,7 +116,7 @@ class media_player {
     return command("set_loop", std::move(p));
   }
 
-  /// @brief Current state, position and stream info.
+  /// @brief Current state, position and duration.
   std::future<media_status> status() {
     auto s = state_;
     return std::async(std::launch::async, [s] {
@@ -151,7 +146,7 @@ class media_player {
 
   /**
    * @brief Stops the player and frees it on the server (decoder, audio
-   *        device, texture). Every copy becomes unusable.
+   *        device). Every copy becomes unusable.
    */
   std::future<void> close() {
     auto s = state_;
@@ -173,10 +168,6 @@ class media_player {
     st.state = static_cast<media_state>(r.get_as<int32_t>(key_t{"state"}, 0));
     st.position = r.get_as<float>(key_t{"position"}, 0.0f);
     st.duration = r.get_as<float>(key_t{"duration"}, 0.0f);
-    st.width = r.get_as<int32_t>(key_t{"width"}, 0);
-    st.height = r.get_as<int32_t>(key_t{"height"}, 0);
-    st.has_video = r.get_as<bool>(key_t{"has_video"}, false);
-    st.has_audio = r.get_as<bool>(key_t{"has_audio"}, false);
     st.volume = r.get_as<float>(key_t{"volume"}, 1.0f);
     st.loop = r.get_as<bool>(key_t{"loop"}, false);
     st.audio_output = r.get_as<bool>(key_t{"audio_output"}, false);
@@ -220,7 +211,7 @@ class media_player {
 namespace detail {
 
 /// @brief Throws `std::logic_error` when the server plays no media (built
-///        without FFmpeg, or an older server); see `has_media()`.
+///        without `WISH_ENABLE_MEDIA`, or an older server); see `has_media()`.
 inline void require_media(const media_player::proxy_ptr& service) {
   if (!service)
     throw std::logic_error("wish: this server plays no media (see has_media())");

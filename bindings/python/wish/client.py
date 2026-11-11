@@ -799,7 +799,7 @@ class Client:
     # ── Media playback ───────────────────────────────────────────────────────
 
     def has_media(self) -> bool:
-        """Whether the server plays media (it was built with FFmpeg)."""
+        """Whether the server plays audio (it was built with WISH_ENABLE_MEDIA)."""
         out = ctypes.c_int(0)
         _check(self._lib.wish_media_available(self._handle, ctypes.byref(out)), "has_media", self.last_error)
         return bool(out.value)
@@ -810,8 +810,8 @@ class Client:
         """Open ``path``, a file already uploaded to the session sandbox, as
         player ``name`` and return a :class:`wish.media.MediaPlayer`.
 
-        The server plays it: show its video with a ``Video`` widget whose
-        ``player`` is ``name``. Absolute paths, ``..`` escapes and URLs are
+        The server decodes it (WAV, FLAC, MP3 or Ogg Vorbis) and plays it on
+        its own sound card. Absolute paths, ``..`` escapes and URLs are
         refused; opening an open name replaces that player; a session has at
         most 8. Raises ``WishError`` when the server plays no media, the path
         is refused or missing, or the file isn't playable."""

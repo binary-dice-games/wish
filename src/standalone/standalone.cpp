@@ -225,7 +225,7 @@ void standalone::render_loop() {
 
 #ifdef WISH_MEDIA_ENABLED
       // See the matching comment in wish::server::render_loop().
-      media::pump_sessions(*renderer_, sessions_snapshot);
+      media::pump_sessions(sessions_snapshot);
 #endif
 
       // render_on_demand() renderers don't treat routine poll_events()

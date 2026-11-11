@@ -239,7 +239,7 @@ public class MediaTests
     {
         using var client = Client.Tcp("127.0.0.1", 7070);
         Assert.False(client.HasMedia);
-        var ex = Assert.Throws<WishException>(() => client.OpenMedia("intro", "intro.mp4"));
+        var ex = Assert.Throws<WishException>(() => client.OpenMedia("intro", "intro.mp3"));
         Assert.Equal(WishErrorCode.Unavailable, ex.Code);
     }
 }

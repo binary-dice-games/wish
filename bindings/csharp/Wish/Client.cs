@@ -706,7 +706,7 @@ public sealed class Client : IDisposable
 
     // ── Media playback ────────────────────────────────────────────────────────
 
-    /// <summary>Whether the server plays media (it was built with FFmpeg).</summary>
+    /// <summary>Whether the server plays audio (it was built with WISH_ENABLE_MEDIA).</summary>
     public bool HasMedia
     {
         get
@@ -718,8 +718,8 @@ public sealed class Client : IDisposable
 
     /// <summary>
     /// Opens <paramref name="path"/>, a file already uploaded to the session sandbox, as player
-    /// <paramref name="name"/>. The server plays it; show its video with a <c>Video</c> widget whose
-    /// <c>player</c> is <paramref name="name"/>. Absolute paths, <c>..</c> escapes and URLs are refused.
+    /// <paramref name="name"/>. The server decodes it (WAV, FLAC, MP3 or Ogg Vorbis) and plays it on its
+    /// own sound card. Absolute paths, <c>..</c> escapes and URLs are refused.
     /// </summary>
     /// <exception cref="WishException">The server plays no media, the path is refused or missing,
     /// or the file isn't playable.</exception>

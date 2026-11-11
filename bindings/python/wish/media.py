@@ -1,16 +1,15 @@
 # MIT License © 2026 Binary Dice Games
-"""Audio/video players playing on the wish server (see docs/media.md).
+"""Audio players playing on the wish server (see docs/media.md).
 
-The server decodes the file -- which must already be in the session sandbox,
-e.g. uploaded with :meth:`wish.Client.upload_file` -- drives its own sound
-card and shows video frames in ``Video`` widgets (``"player": name``) or
-``Image`` widgets (``"src": "media://" + name``). This module only sends
-commands; it needs no media library.
+The server decodes the file (WAV, FLAC, MP3 or Ogg Vorbis) -- which must
+already be in the session sandbox, e.g. uploaded with
+:meth:`wish.Client.upload_file` -- and drives its own sound card. This module
+only sends commands; it needs no media library.
 
 Example::
 
-    client.upload_file("intro.mp4", open("intro.mp4", "rb").read())
-    player = client.open_media("intro", "intro.mp4", autoplay=True)
+    client.upload_file("intro.mp3", open("intro.mp3", "rb").read())
+    player = client.open_media("intro", "intro.mp3", autoplay=True)
     player.on_event(lambda event, state, message: print(event, state))
 """
 
@@ -37,17 +36,13 @@ class MediaStatus:
     state: str
     position: float
     duration: float
-    width: int
-    height: int
-    has_video: bool
-    has_audio: bool
     volume: float
     loop: bool
     audio_output: bool  #: False when the server has no sound card (silent).
 
 
 class MediaPlayer:
-    """A media file opened on the server by :meth:`wish.Client.open_media`.
+    """An audio file opened on the server by :meth:`wish.Client.open_media`.
 
     Every method blocks until the server answered and raises
     :class:`wish.WishError` once the player was closed or the session ended.
@@ -100,17 +95,13 @@ class MediaPlayer:
         self._call(self._lib.wish_media_set_loop, "MediaPlayer.set_loop", 1 if loop else 0)
 
     def status(self) -> MediaStatus:
-        """The player's state, position and stream info."""
+        """The player's state, position and duration."""
         s = _n.MediaStatus()
         self._call(self._lib.wish_media_get_status, "MediaPlayer.status", ctypes.byref(s))
         return MediaStatus(
             state=MEDIA_STATES[s.state] if 0 <= s.state < len(MEDIA_STATES) else "error",
             position=s.position,
             duration=s.duration,
-            width=s.width,
-            height=s.height,
-            has_video=bool(s.has_video),
-            has_audio=bool(s.has_audio),
             volume=s.volume,
             loop=bool(s.loop),
             audio_output=bool(s.audio_output),

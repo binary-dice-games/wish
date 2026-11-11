@@ -33,13 +33,15 @@ namespace fs = std::filesystem;
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-TEST(MpvHelpers, RecognizesMediaFileNames) {
-  EXPECT_TRUE(wish::mpv::is_media_name("movie.mp4"));
+TEST(MpvHelpers, RecognizesPlayableAudioFileNames) {
   EXPECT_TRUE(wish::mpv::is_media_name("Song.MP3"));
-  EXPECT_TRUE(wish::mpv::is_media_name("clip.webm"));
   EXPECT_TRUE(wish::mpv::is_media_name("a.b.flac"));
+  EXPECT_TRUE(wish::mpv::is_media_name("beep.wav"));
+  EXPECT_TRUE(wish::mpv::is_media_name("track.ogg"));
+  EXPECT_FALSE(wish::mpv::is_media_name("movie.mp4")) << "video is not played";
+  EXPECT_FALSE(wish::mpv::is_media_name("clip.webm"));
   EXPECT_FALSE(wish::mpv::is_media_name("notes.txt"));
-  EXPECT_FALSE(wish::mpv::is_media_name("mp4"));
+  EXPECT_FALSE(wish::mpv::is_media_name("mp3"));
   EXPECT_FALSE(wish::mpv::is_media_name("trailing."));
 }
 
@@ -50,22 +52,22 @@ TEST(MpvHelpers, FormatsTimes) {
   EXPECT_EQ(wish::mpv::format_time(-3), "0:00");
 }
 
-TEST(MpvHelpers, LibraryListsMediaButNotBuiltInOrPrivateFolders) {
+TEST(MpvHelpers, LibraryListsAudioButNotBuiltInOrPrivateFolders) {
   const auto* info = ::testing::UnitTest::GetInstance()->current_test_info();
   const fs::path root =
       fs::temp_directory_path() / ("wish_mpv_" + std::string{info->name()} + "_" +
                                    std::to_string(rmi::shared::generate_id().id));
   for (const char* d : {"media", "res/icons", "private/apps/x", "a/b/c/d/e"})
     fs::create_directories(root / d);
-  for (const char* f : {"media/movie.mp4", "media/notes.txt", "song.mp3", "res/icons/beep.wav",
-           "private/apps/x/secret.mp4", "a/b/c/d/e/too_deep.mp4"})
+  for (const char* f : {"media/track.flac", "media/movie.mp4", "media/notes.txt", "song.mp3", "res/icons/beep.wav",
+           "private/apps/x/secret.mp3", "a/b/c/d/e/too_deep.mp3"})
     std::ofstream(root / f) << "x";
 
   const auto lib = wish::mpv::scan_library(root);
   std::vector<std::string> names;
   for (const auto& [name, size] : lib)
     names.push_back(name);
-  EXPECT_EQ(names, (std::vector<std::string>{"media/movie.mp4", "song.mp3"}));
+  EXPECT_EQ(names, (std::vector<std::string>{"media/track.flac", "song.mp3"}));
   EXPECT_EQ(lib[0].second, 1u);
   fs::remove_all(root);
 }
@@ -177,24 +179,27 @@ const std::string kLibrary = ".split.files.library_table";
 
 // ── Window and RMI methods ──────────────────────────────────────────────────
 
-TEST_F(MpvFormTest, VideoWidgetShowsTheFormsPlayer) {
+TEST_F(MpvFormTest, FormNamesItsOwnPlayerAndShowsNoVideo) {
   const auto player = proxy_->get().get().get_as<std::string>("player"_key, "");
   EXPECT_EQ(player.rfind("bdg.desktop.mpv.", 0), 0u) << player;
-  EXPECT_EQ(el(".split.player.video")->as<std::string>("player"_key), player);
+  const auto& objects = srv_->last_session->ui_objects;
+  EXPECT_EQ(objects.count(root_ + ".split.player.video"), 0u) << "audio only: no Video widget";
+  EXPECT_EQ(el(".split.player.cover_row.cover")->as<std::string>("src"_key), "res/icons/audio.png");
+  EXPECT_EQ(text(".split.player.title_row.now_playing"), "Nothing is playing. Double-click a file in the Library.");
 }
 
-TEST_F(MpvFormTest, LocalListingKeepsFoldersAndMediaFilesOnly) {
+TEST_F(MpvFormTest, LocalListingKeepsFoldersAndAudioFilesOnly) {
   proxy_->call("update_local_listing"_key,
-            listing("/home/u/Videos", {{"..", "dir"}, {"zeta.mkv", "file"}, {"notes.txt", "file"},
-                                          {"Alpha", "dir"}, {"song.mp3", "file"}}))
+            listing("/home/u/Music", {{"..", "dir"}, {"zeta.ogg", "file"}, {"notes.txt", "file"},
+                                         {"movie.mkv", "file"}, {"Alpha", "dir"}, {"song.mp3", "file"}}))
       .get();
-  EXPECT_EQ(rows(kLocal), 4u) << ".., Alpha, song.mp3, zeta.mkv";
-  EXPECT_EQ(el(".split.files.path_row.path")->as<std::string>("value"_key), "/home/u/Videos");
+  EXPECT_EQ(rows(kLocal), 4u) << ".., Alpha, song.mp3, zeta.ogg";
+  EXPECT_EQ(el(".split.files.path_row.path")->as<std::string>("value"_key), "/home/u/Music");
 }
 
-TEST_F(MpvFormTest, LibraryListsSandboxMediaOnRefresh) {
+TEST_F(MpvFormTest, LibraryListsSandboxAudioOnRefresh) {
   EXPECT_EQ(rows(kLibrary), 0u);
-  put_sandbox_file("media/clip.mp4");
+  put_sandbox_file("media/clip.mp3");
   put_sandbox_file("media/readme.txt");
   proxy_->call("refresh_library"_key, dynamic{}).get();
   EXPECT_EQ(rows(kLibrary), 1u);
@@ -206,7 +211,7 @@ TEST_F(MpvFormTest, UpdateStatusMovesTheSeekBarAndTime) {
   st["state"_key] = int32_t{1};
   st["position"_key] = 65.0f;
   st["duration"_key] = 3723.0f;
-  st["has_video"_key] = true;
+  st["audio_output"_key] = true;
   proxy_->call("update_status"_key, std::move(st)).get();
   EXPECT_EQ(text(".split.player.controls.time"), "1:05 / 1:02:03");
   EXPECT_FLOAT_EQ(el(".split.player.seek")->as<float>("max"_key), 3723.0f);
@@ -242,7 +247,7 @@ TEST_F(MpvFormTest, ActivatingALocalFolderNavigates) {
 }
 
 TEST_F(MpvFormTest, ActivatingALocalFileUploadsAndPlaysIt) {
-  proxy_->call("update_local_listing"_key, listing("/home/u", {{"clip.mp4", "file"}})).get();
+  proxy_->call("update_local_listing"_key, listing("/home/u", {{"clip.mp3", "file"}})).get();
   const auto since = srv_->events->mark();
   fire(kLocal, "row_activated"_key, row(0));
   auto ev = srv_->events->wait_for("on_upload_requested"_key, since);
@@ -252,7 +257,7 @@ TEST_F(MpvFormTest, ActivatingALocalFileUploadsAndPlaysIt) {
   EXPECT_TRUE(ev->as<bool>("play"_key));
   auto names = ev->as<dynamic_ptr>("names"_key);
   ASSERT_TRUE(names);
-  EXPECT_EQ((*names)[size_t{0}].as<std::string>(), "clip.mp4");
+  EXPECT_EQ((*names)[size_t{0}].as<std::string>(), "clip.mp3");
 }
 
 TEST_F(MpvFormTest, UploadWithoutSelectionAsksForOne) {
@@ -277,7 +282,7 @@ TEST_F(MpvFormTest, SelectedLocalFilesAreUploadedTogether) {
 }
 
 TEST_F(MpvFormTest, ActivatingALibraryFileOpensItWithThePlayerSettings) {
-  put_sandbox_file("media/clip.mp4");
+  put_sandbox_file("media/clip.mp3");
   proxy_->call("refresh_library"_key, dynamic{}).get();
   el(".split.player.controls.volume")["value"_key] = 0.5f;
   el(".split.player.controls.loop")["value"_key] = true;
@@ -285,8 +290,8 @@ TEST_F(MpvFormTest, ActivatingALibraryFileOpensItWithThePlayerSettings) {
   fire(kLibrary, "row_activated"_key, row(0));
   auto ev = srv_->events->wait_for("on_open_requested"_key, since);
   ASSERT_TRUE(ev);
-  EXPECT_EQ(ev->as<std::string>("path"_key), "media/clip.mp4");
-  EXPECT_EQ(ev->as<std::string>("player"_key), el(".split.player.video")->as<std::string>("player"_key));
+  EXPECT_EQ(ev->as<std::string>("path"_key), "media/clip.mp3");
+  EXPECT_EQ(ev->as<std::string>("player"_key), proxy_->get().get().get_as<std::string>("player"_key, ""));
   EXPECT_FLOAT_EQ(ev->as<float>("volume"_key), 0.5f);
   EXPECT_TRUE(ev->as<bool>("loop"_key));
 }
@@ -297,7 +302,7 @@ TEST_F(MpvFormTest, TransportControlsBecomeOnControl) {
   fire(".split.player.controls.play", "clicked"_key);
   EXPECT_FALSE(srv_->events->saw("on_control"_key, since));
 
-  put_sandbox_file("media/clip.mp4");
+  put_sandbox_file("media/clip.mp3");
   proxy_->call("refresh_library"_key, dynamic{}).get();
   fire(kLibrary, "row_activated"_key, row(0));
 

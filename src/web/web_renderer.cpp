@@ -429,7 +429,7 @@ void web_renderer::end_frame() {
           texture_ids_.erase(it);
         }
         // ImGui asserts a Destroyed texture has no TexID left (it may be a
-        // user texture, e.g. a media frame, unregistered right after this).
+        // user texture, unregistered right after this).
         tex->SetTexID(ImTextureID_Invalid);
         tex->SetStatus(ImTextureStatus_Destroyed);
         break;
