@@ -375,7 +375,7 @@ public final class Client implements AutoCloseable {
 
   // ─── Media playback ─────────────────────────────────────────────────────
 
-  /** Whether the server plays media (it was built with FFmpeg). */
+  /** Whether the server plays audio (it was built with WISH_ENABLE_MEDIA). */
   public boolean hasMedia() {
     return nativeMediaAvailable(handle);
   }
@@ -387,8 +387,8 @@ public final class Client implements AutoCloseable {
 
   /**
    * Opens {@code path}, a file already uploaded to the session sandbox, as player {@code name}.
-   * The server plays it; show its video with a {@code Video} widget whose {@code player} is
-   * {@code name}. Absolute paths, {@code ..} escapes and URLs are refused.
+   * The server decodes it (WAV, FLAC, MP3 or Ogg Vorbis) and plays it on its own sound card.
+   * Absolute paths, {@code ..} escapes and URLs are refused.
    *
    * @throws WishException when the server plays no media, the path is refused or missing, or
    *     the file isn't playable

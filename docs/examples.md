@@ -283,35 +283,34 @@ would, run its instrumented test suite instead:
 
 ### What it demonstrates
 
-Server-side media playback ([media.md](media.md)) in one binary. The
+Server-side audio playback ([media.md](media.md)) in one binary. The
 client:
 
-- uploads a local audio or video file to its session sandbox
-  (`upload_file()`, streamed);
-- opens it with `open_media("movie", ...)`, with `autoplay` and an optional
+- uploads a local audio file (WAV, FLAC, MP3 or Ogg Vorbis) to its session
+  sandbox (`upload_file()`, streamed);
+- opens it with `open_media("song", ...)`, with `autoplay` and an optional
   `loop`;
-- shows it in a `Video` widget. Clicking the picture toggles play/pause;
 - wires Play / Pause / Stop buttons, a seek bar (`SliderFloat` → `seek()`)
   and a volume slider (`set_volume()`);
 - polls `status()` four times a second for the position label;
 - uses `on_ended()` and `on_error()`.
 
 The server decodes the file and plays its sound. The example itself links
-no media library. It is only built when the server has media support
-(`WISH_ENABLE_MEDIA`, FFmpeg installed; see
-[building.md](building.md#media-playback-ffmpeg)).
+no media library. It is only built when the server has audio support
+(`WISH_ENABLE_MEDIA`, on by default; see
+[building.md](building.md#audio-playback)).
 
 ### Running
 
 ```sh
-./build/examples/media_player --file=movie.mp4
-./build/examples/media_player --file=song.mp3 --loop
-./build/examples/media_player --file=movie.mp4 --renderer web   # then open the printed URL
+./build/examples/media_player --file=song.mp3
+./build/examples/media_player --file=song.flac --loop
+./build/examples/media_player --file=song.ogg --renderer web   # then open the printed URL
 ```
 
 | Flag | Effect |
 |------|--------|
-| `--file <path>` | Audio or video file to play (required). |
+| `--file <path>` | Audio file to play (required). |
 | `--loop` | Restart from the beginning at the end. |
 | `--verbose` / `-v` | Print upload/open/end messages to `stderr`. |
-| `--renderer sdl3\|web` | Window or browser renderer. With `web`, keep videos small: frames go to the browser as raw RGBA. |
+| `--renderer sdl3\|web` | Window or browser renderer. The sound plays on the server's sound card either way. |

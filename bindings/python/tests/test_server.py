@@ -345,7 +345,7 @@ class TestMedia(unittest.TestCase):
         def session(c, r):
             r["has"] = c.has_media()
             if not r["has"]:
-                return  # a server built without FFmpeg
+                return  # a server built without WISH_ENABLE_MEDIA
             c.upload_file("quiet.wav", _silent_wav(0.3))
             ended = threading.Event()
             events = []
@@ -365,8 +365,6 @@ class TestMedia(unittest.TestCase):
         if not r["has"]:
             self.skipTest("server built without media support")
         self.assertEqual(r["name"], "quiet")
-        self.assertTrue(r["status"].has_audio)
-        self.assertFalse(r["status"].has_video)
         self.assertEqual(r["status"].state, "stopped")
         self.assertAlmostEqual(r["status"].duration, 0.3, delta=0.05)
         self.assertTrue(r["ended"])

@@ -59,10 +59,6 @@ internal struct NativeMediaStatus
     public double Duration;
     public float Volume;
     public int State;
-    public int Width;
-    public int Height;
-    public int HasVideo;
-    public int HasAudio;
     public int Loop;
     public int AudioOutput;
 }

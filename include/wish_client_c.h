@@ -921,11 +921,9 @@ WISH_API wish_error wish_notify_dismiss(wish_client_handle client, uint64_t id);
 /* ── Media playback ───────────────────────────────────────────────────────── */
 
 /**
- * Audio and video played by the server (see docs/media.md). The server
- * decodes the file, drives its own sound card and shows video frames in
- * `Video` widgets (`"player": "<name>"`) or `Image` widgets
- * (`"src": "media://<name>"`); this library only sends commands and links
- * no media library.
+ * Audio played by the server (see docs/media.md). The server decodes the
+ * file (WAV, FLAC, MP3 or Ogg Vorbis) and drives its own sound card; this
+ * library only sends commands and links no media library.
  *
  * A file must already be in the session sandbox (uploaded with
  * wish_upload_file() or wish_sync_resource_package()): absolute paths, `..`
@@ -956,10 +954,6 @@ typedef struct wish_media_status {
   double duration;      /**< Seconds; 0 when the file doesn't say. */
   float volume;         /**< 0 .. 1. */
   int32_t state;        /**< WISH_MEDIA_STATE_*. */
-  int32_t width;        /**< Video width in pixels; 0 without video. */
-  int32_t height;       /**< Video height in pixels; 0 without video. */
-  int32_t has_video;    /**< 1 when the file has video. */
-  int32_t has_audio;    /**< 1 when the file has audio. */
   int32_t loop;         /**< 1 when it restarts at the end. */
   int32_t audio_output; /**< 0 when the server has no sound card (silent). */
 } wish_media_status;
@@ -981,7 +975,7 @@ typedef void (*wish_media_event_fn)(
     wish_media_handle media, int32_t event, int32_t state, const char* message, void* userdata);
 
 /**
- * @brief Whether the server plays media (it was built with FFmpeg).
+ * @brief Whether the server plays audio (it was built with WISH_ENABLE_MEDIA).
  * @param client     Active session handle.
  * @param out_avail  Output: 1 or 0.
  * @return WISH_OK; WISH_ERR_NULL.
@@ -994,7 +988,7 @@ WISH_API wish_error wish_media_available(wish_client_handle client, int* out_ava
  * Opening a name that is already open replaces (closes) that player.
  *
  * @param client  Active session handle.
- * @param name    Name widgets refer to (1-128 bytes).
+ * @param name    Player name, unique per session (1-128 bytes).
  * @param path    Sandbox-relative path of an uploaded file.
  * @param flags   WISH_MEDIA_AUTOPLAY | WISH_MEDIA_LOOP, or 0.
  * @param volume  Initial volume, 0 .. 1.

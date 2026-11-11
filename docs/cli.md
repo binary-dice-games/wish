@@ -95,7 +95,7 @@ launch.
 | `--width N` | `1280` | Initial window width in pixels (`--renderer sdl3` only) |
 | `--height N` | `720` | Initial window height in pixels (`--renderer sdl3` only) |
 | `--font_size N` | `16` | UI font size in pixels |
-| `--renderer NAME` | `sdl3` | Rendering backend: `sdl3` (a native window; best for video playback) or `web`. A binary built without SDL3 defaults to `web` |
+| `--renderer NAME` | `sdl3` | Rendering backend: `sdl3` (a native window) or `web`. A binary built without SDL3 defaults to `web` |
 | `--web_port PORT` | `8080` | HTTP/WebSocket port (`--renderer web` only) |
 | `--web_bind ADDR` | `127.0.0.1` | Bind address (`--renderer web` only; localhost-only by default) |
 | `--settings_admins A,B` | *(empty)* | Identities (`--username`) allowed to change server-wide settings, such as the saved default theme, from the Settings tool (`bdg/desktop/conf`; see [settings.md](settings.md)). Trusts the client-supplied name — local/single-user use only. Never saved as a default |

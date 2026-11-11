@@ -302,6 +302,6 @@ fn unconnected_sync_reports_one_failure() {
 fn media_is_unavailable_without_a_session() {
     let client = Client::tcp("127.0.0.1", 1);
     assert!(!client.has_media().unwrap());
-    let err = client.open_media("intro", "intro.mp4", &wish::MediaOptions::default()).unwrap_err();
+    let err = client.open_media("intro", "intro.mp3", &wish::MediaOptions::default()).unwrap_err();
     assert_eq!(err.code, wish::sys::WISH_ERR_UNAVAILABLE);
 }

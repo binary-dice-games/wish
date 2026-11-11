@@ -858,7 +858,7 @@ impl Client {
 
     // ── Media playback ───────────────────────────────────────────────────
 
-    /// True if the server plays media (it was built with FFmpeg).
+    /// True if the server plays audio (it was built with WISH_ENABLE_MEDIA).
     pub fn has_media(&self) -> Result<bool, WishError> {
         let mut avail: std::os::raw::c_int = 0;
         check(
@@ -870,8 +870,8 @@ impl Client {
     }
 
     /// Opens `path`, a file already uploaded to the session sandbox, as
-    /// player `name`. The server plays it; show its video with a `Video`
-    /// widget whose `player` is `name`. Absolute paths, `..` escapes and
+    /// player `name`. The server decodes it (WAV, FLAC, MP3 or Ogg Vorbis)
+    /// and plays it on its own sound card. Absolute paths, `..` escapes and
     /// URLs are refused. Fails with `WISH_ERR_UNAVAILABLE` when the server
     /// plays no media.
     pub fn open_media(&self, name: &str, path: &str, options: &MediaOptions) -> Result<MediaPlayer, WishError> {

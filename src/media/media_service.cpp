@@ -58,10 +58,6 @@ media_service::media_service(
               const auto& info = player->engine()->info();
               dynamic result;
               result["id"_key] = player->rmi_id();
-              result["has_video"_key] = info.has_video;
-              result["has_audio"_key] = info.has_audio;
-              result["width"_key] = static_cast<int32_t>(info.width);
-              result["height"_key] = static_cast<int32_t>(info.height);
               result["duration"_key] = static_cast<float>(info.duration);
               return result;
             }});
@@ -159,13 +155,13 @@ bool media_service::empty() const {
   return players_.rlock()->empty();
 }
 
-bool media_service::pump(const context& s, renderer& r) {
+bool media_service::pump(const context& s) {
   std::vector<media_player_ptr> players;
   for (const auto& [name, player] : *players_.rlock())
     players.push_back(player);
   bool changed = false;
   for (const auto& player : players)
-    changed |= player->pump(s, r);
+    changed |= player->pump(s);
   return changed;
 }
 
@@ -174,13 +170,13 @@ void register_media_service() {
   register_media_player();
 }
 
-void pump_sessions(renderer& r, const std::vector<sync_context_ptr>& sessions) {
+void pump_sessions(const std::vector<sync_context_ptr>& sessions) {
   for (const auto& sync_ctx : sessions) {
     media_service_ptr svc = context_rlock{*sync_ctx}->media_service;
     if (!svc || svc->empty())
       continue;
     auto sess = context_wlock{*sync_ctx};
-    if (svc->pump(*sess, r))
+    if (svc->pump(*sess))
       sess->dirty.store(std::max(sess->dirty.load(std::memory_order_relaxed), 1), std::memory_order_release);
   }
 }

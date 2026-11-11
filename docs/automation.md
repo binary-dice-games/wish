@@ -711,34 +711,18 @@ def test_saving_shows_confirmation(wish_ui):
 
 ## Gotchas
 
-- **Verifying media playback (video frames)** (verified 2026-10, web
-  renderer; see [media.md](media.md)): render a known video, sample pixels
-  from the screenshot, and check what changes. Run a `wish.Client` on a
-  thread that uploads the file, calls `open_media()`, instantiates a
-  template with a `Video` (and/or an `Image` with `src = "media://<name>"`),
-  then seeks. Keep the `instantiate_template()` result in a variable, or
-  the window is destroyed (see the premature-destroy point above). Then
-  `AutomationClient` reads the widget's `rect`, takes `screenshot()`, and
-  samples the rect's center with PIL. A two-color clip (solid red for 2 s,
-  then green; `tests/media_test_files.hpp`'s `write_red_green_video()`
-  writes one, compiled with `pkg-config --libs libavformat libavcodec
-  libavutil`) gives an unambiguous before/after for a `seek(3.0)`. Wait
-  ~1 s after open or seek for the frame to reach the browser. A frame
-  that reads pure white (255, 255, 255) means the browser got a texture id
-  it has no pixels for. That happened once because an `ImTextureData*` was
-  passed as `ImTextureRef(ptr)` (see `texture_ref()` in
-  `imgui_ui_renderer.cpp`). SDL3 frames can't be checked this way because
-  of the native-automation hang above; smoke-run `examples/media_player
-  --renderer sdl3` instead.
-- **Clicks starve while a video plays (web renderer, headless Chromium)**
-  (verified 2026-10, mpv): every new video frame redraws the whole page in
-  software (SwiftShader). From about 320x180 at 25 fps up, Playwright's
-  `mouse.click()` can then block until the timeout, and the page stops
-  answering. The server isn't stuck (its threads are idle in gdb). Do every
-  click *before* starting playback, and only screenshot while it plays. A
-  clip that ends frees the page again. Clicks on a table row right after an
-  upload, or a Ctrl+click, sometimes don't register either: confirm the
-  effect (e.g. the selection label) and retry.
+- **Audio playback in a container with no sound card** (verified 2026-11,
+  mpv): miniaudio finds no ALSA device, so every player reports
+  `audio_output = false` and mpv shows "(no sound card on the server)";
+  playback still runs in real time. For a screenshot or a check of the
+  device path, a temporary `~/.asoundrc` with `pcm.!default { type null }`
+  gives ALSA a device that swallows the audio; delete it afterwards. The
+  ALSA "cannot find card" lines on stderr are expected without one.
+- **Table-row clicks sometimes don't register** (2026-10/11, mpv's Local
+  list): `--click local_table.0` followed by `--click
+  local_actions.upload_play` occasionally leaves nothing selected ("Select
+  one or more audio files..."). Confirm the effect in the screenshot (the
+  selected row, the status line) and re-run.
 - **Don't stop servers with `pkill -f "<pattern>"` from an agent shell**:
   the shell running the command has the pattern in its own command line,
   so it matches and kills itself (exit 143/144, with no output). Kill by PID

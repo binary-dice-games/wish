@@ -578,15 +578,14 @@ JNIEXPORT jint JNICALL Java_com_bdg_wish_MediaPlayer_nativeSetLoop(JNIEnv*, jcla
   return static_cast<jint>(wish_media_set_loop(from_jlong<wish_media_handle>(media), loop ? 1 : 0));
 }
 
-// Fills out[10]: position, duration, volume, state, width, height,
-// has_video, has_audio, loop, audio_output.
+// Fills out[6]: position, duration, volume, state, loop, audio_output.
 JNIEXPORT jint JNICALL Java_com_bdg_wish_MediaPlayer_nativeStatus(JNIEnv* env, jclass, jlong media, jdoubleArray out) {
   wish_media_status s{};
   wish_error err = wish_media_get_status(from_jlong<wish_media_handle>(media), &s);
   if (err != WISH_OK) return static_cast<jint>(err);
-  const jdouble v[10] = {s.position, s.duration, s.volume, double(s.state), double(s.width), double(s.height),
-      double(s.has_video), double(s.has_audio), double(s.loop), double(s.audio_output)};
-  env->SetDoubleArrayRegion(out, 0, 10, v);
+  const jdouble v[6] = {
+      s.position, s.duration, s.volume, double(s.state), double(s.loop), double(s.audio_output)};
+  env->SetDoubleArrayRegion(out, 0, 6, v);
   return WISH_OK;
 }
 

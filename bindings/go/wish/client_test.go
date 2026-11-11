@@ -449,7 +449,7 @@ func TestMediaUnavailableWithoutSession(t *testing.T) {
 		t.Fatalf("HasMedia() = %v, %v; want false, nil", has, err)
 	}
 	var we *WishError
-	if _, err := c.OpenMedia("intro", "intro.mp4", DefaultMediaOptions()); !errors.As(err, &we) || we.Code != WishErrUnavailable {
+	if _, err := c.OpenMedia("intro", "intro.mp3", DefaultMediaOptions()); !errors.As(err, &we) || we.Code != WishErrUnavailable {
 		t.Fatalf("OpenMedia() error = %v; want WishErrUnavailable", err)
 	}
 }

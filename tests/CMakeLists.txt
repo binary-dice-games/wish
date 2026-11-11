@@ -175,8 +175,6 @@ endif()
 
 if(WISH_ENABLE_MEDIA)
   wish_add_test(test_media test_media.cpp)
-  # media_test_files.hpp encodes its test video with libavcodec directly.
-  target_link_libraries(test_media PRIVATE FFMPEG::FFMPEG)
 endif()
 
 if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3 AND WISH_ENABLE_AUTOMATION)

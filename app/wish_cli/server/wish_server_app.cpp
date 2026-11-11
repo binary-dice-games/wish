@@ -45,8 +45,8 @@ DEFINE_string(title, "wish", "Window title");
 DEFINE_int32(width, 1280, "Window width in pixels");
 DEFINE_int32(height, 720, "Window height in pixels");
 DEFINE_int32(font_size, 16, "Font size in pixels");
-// sdl3 by default: video playback (the Video widget) is smoothest in a native
-// window. A binary built without SDL3 can only default to web.
+// sdl3 by default: a native window. A binary built without SDL3 can only
+// default to web.
 #ifdef WISH_SDL3_ENABLED
 #define WISH_DEFAULT_RENDERER "sdl3"
 #else

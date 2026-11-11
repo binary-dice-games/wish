@@ -1,20 +1,9 @@
 // MIT License © 2026 Binary Dice Games
 /// @file audio_output.cpp
 /// @brief Implementation of wish::media::audio_output on miniaudio.
+#include <media/audio_decoder.hpp>
 #include <media/audio_output.hpp>
-#include <media/media_decoder.hpp>
-
-// The one translation unit holding miniaudio's implementation. Decoding,
-// encoding, the node graph and the high-level engine are FFmpeg's or
-// unused here: only the low-level device API is compiled in.
-#define MINIAUDIO_IMPLEMENTATION
-#define MA_NO_DECODING
-#define MA_NO_ENCODING
-#define MA_NO_GENERATION
-#define MA_NO_RESOURCE_MANAGER
-#define MA_NO_NODE_GRAPH
-#define MA_NO_ENGINE
-#include <miniaudio.h>
+#include <media/miniaudio_config.hpp>
 
 #include <algorithm>
 #include <mutex>

@@ -301,8 +301,6 @@ void run_mpv(wish_app_host& s) {
           args["state"_key] = static_cast<int32_t>(st.state);
           args["position"_key] = static_cast<float>(st.position);
           args["duration"_key] = static_cast<float>(st.duration);
-          args["has_video"_key] = st.has_video;
-          args["has_audio"_key] = st.has_audio;
           args["audio_output"_key] = st.audio_output;
           form->call("update_status"_key, std::move(args)).get();
         } catch (const std::exception&) {
@@ -331,7 +329,8 @@ struct mpv_app_registrar {
         .name = "mpv",
         .organization = WISH_MODULE_BDG_DESKTOP_MPV_ORGANIZATION,
         .collection = WISH_MODULE_BDG_DESKTOP_MPV_COLLECTION,
-        .description = "Media player: upload local video/audio files to the sandbox and play them on the server",
+        .description = "Audio player: upload local audio files (MP3, FLAC, WAV, Ogg) to the sandbox and play them "
+                       "on the server",
         .icon = "res/icons/audio.png",
         .params = {{"folder", "Local folder to list at startup (default: the current directory)"}},
         .run = run_mpv,

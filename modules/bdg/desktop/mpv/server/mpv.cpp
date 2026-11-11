@@ -1,6 +1,6 @@
 // MIT License © 2026 Binary Dice Games
 /// @file mpv.cpp
-/// @brief Implementation of the mpv media player form.
+/// @brief Implementation of the mpv audio player form.
 #include "mpv.hpp"
 
 #include "modules/bdg/common/server/list_panel.hpp"
@@ -36,11 +36,12 @@ constexpr const char* kMediaDir = "media";
 constexpr std::chrono::milliseconds kSeekQuiet{1200};
 
 // The window: a Splitter with the file lists on the left (the local machine
-// above the sandbox library) and the player on the right. The Video and both tables take "height": -1, so their
-// VerticalLayout gives them whatever is left after the other rows.
-// "unavailable" is shown instead of the player on a server without media
-// support. Rows of both tables are built at runtime (fill_local(),
-// fill_library()).
+// above the sandbox library) and the player on the right. The library table
+// takes "height": -1, so its VerticalLayout gives it whatever is left after
+// the other rows; on the right, two Springs center the cover icon and the
+// title above the transport controls. "unavailable" is shown on a server
+// without audio playback. Rows of both tables are built at runtime
+// (fill_local(), fill_library()).
 constexpr const char* kLayout = R"json({
   "type": "Window",
   "title": "$$MPV_TITLE",
@@ -100,9 +101,25 @@ constexpr const char* kLayout = R"json({
         "player": {
           "type": "VerticalLayout", "spacing": 6,
           "children": {
-            "now_playing": { "type": "Label", "text": "$$MPV_NOTHING_OPEN" },
+            "top_spring": { "type": "Spring" },
+            "cover_row": {
+              "type": "HorizontalLayout",
+              "children": {
+                "left": { "type": "Spring" },
+                "cover": { "type": "Image", "src": "res/icons/audio.png", "width": 160, "height": 160, "badge": "#3478F6", "tint": "#FFFFFFFF" },
+                "right": { "type": "Spring" }
+              }
+            },
+            "title_row": {
+              "type": "HorizontalLayout",
+              "children": {
+                "left": { "type": "Spring" },
+                "now_playing": { "type": "Label", "text": "$$MPV_NOTHING_OPEN" },
+                "right": { "type": "Spring" }
+              }
+            },
             "unavailable": { "type": "Label", "text": "$$MPV_UNAVAILABLE", "visible": false, "wrap": true },
-            "video": { "type": "Video", "player": "", "width": -1, "height": -1 },
+            "bottom_spring": { "type": "Spring" },
             "seek": { "type": "SliderFloat", "label": "##seek", "value": 0.0, "min": 0.0, "max": 1.0, "format": "", "width": -1 },
             "controls": {
               "type": "HorizontalLayout", "spacing": 12,
@@ -146,8 +163,8 @@ std::string base_name(const std::string& path) {
 // ── Static helpers ───────────────────────────────────────────────────────────
 
 bool mpv::is_media_name(const std::string& name) {
-  static const std::set<std::string> kExtensions{"mp4", "m4v", "mkv", "webm", "mov", "avi", "mpg", "mpeg", "ogv",
-      "wmv", "flv", "ts", "mp3", "wav", "flac", "ogg", "oga", "opus", "m4a", "aac", "wma"};
+  // The formats the server's audio playback decodes (see docs/media.md).
+  static const std::set<std::string> kExtensions{"mp3", "wav", "flac", "ogg", "oga"};
   const auto dot = name.find_last_of('.');
   if (dot == std::string::npos || dot + 1 == name.size())
     return false;
@@ -200,7 +217,7 @@ mpv::~mpv() = default;
 
 void mpv::on_init() {
   internal_root_key_ = next_available_key("__mpv_");
-  // Unique per form, so two players in one session don't share a texture.
+  // Unique per form, so two windows in one session don't share a player.
   player_name_ = "bdg.desktop.mpv." + internal_root_key_;
   (*this)["player"_key] = player_name_;
 
@@ -228,12 +245,8 @@ void mpv::on_init() {
     tree.with(B + "library_actions.remove", [&](const auto& e) { lib_remove_id_ = wish_id_of(e); });
     tree.with(B + "library_actions.refresh", [&](const auto& e) { lib_refresh_id_ = wish_id_of(e); });
     tree.with(B + "library_actions.count", [&](const auto& e) { library_count_ = e; });
-    tree.with(P + "now_playing", [&](const auto& e) { now_playing_ = e; });
+    tree.with(P + "title_row.now_playing", [&](const auto& e) { now_playing_ = e; });
     tree.with(P + "unavailable", [&](const auto& e) { unavailable_ = e; });
-    tree.with(P + "video", [&](const auto& e) {
-      video_ = e;
-      video_id_ = wish_id_of(e);
-    });
     tree.with(P + "seek", [&](const auto& e) {
       seek_ = e;
       seek_id_ = wish_id_of(e);
@@ -254,8 +267,6 @@ void mpv::on_init() {
     });
     tree.with(P + "status", [&](const auto& e) { status_ = e; });
   });
-  if (video_)
-    video_["player"_key] = player_name_;
 
   on_click(up_id_, [this] { emit("on_local_navigate"_key, make_payload("name"_key, std::string{".."}, "type"_key, std::string{"dir"})); });
   on_click(upload_id_, [this] { request_upload({local_selection_.begin(), local_selection_.end()}, false); });
@@ -265,7 +276,6 @@ void mpv::on_init() {
   on_click(lib_refresh_id_, [this] { fill_library(); });
   on_click(play_id_, [this] { control(playing_ ? "pause" : "play"); });
   on_click(stop_id_, [this] { control("stop"); });
-  on_click(video_id_, [this] { control(playing_ ? "pause" : "play"); });
 
   fill_library();
 }
@@ -532,10 +542,8 @@ dynamic mpv::do_update_status(const dynamic& args) {
     static const char* kStates[] = {"$$MPV_STOPPED", "$$MPV_PLAYING", "$$MPV_PAUSED", "$$MPV_ENDED", "$$MPV_ERROR"};
     const std::string state_text = tr(kStates[std::clamp(state, 0, 4)]);
     std::string line = base_name(playing_path_) + "  -  " + state_text;
-    if (args.get_as<bool>("has_audio"_key, false) && !args.get_as<bool>("audio_output"_key, true))
+    if (!args.get_as<bool>("audio_output"_key, true))
       line += "  " + tr("$$MPV_NO_SOUND_CARD");
-    if (!args.get_as<bool>("has_video"_key, false))
-      line += "  " + tr("$$MPV_AUDIO_ONLY");
     now_playing_["text"_key] = line;
   }
   return {};
@@ -615,7 +623,7 @@ void register_mpv() {
       field{
           std::string{""},
           attr<DisplayName>("Player"),
-          attr<Description>("Name of the media player this window shows (set by the form; the client "
+          attr<Description>("Name of the audio player this window drives (set by the form; the client "
                             "opens files under this name, see on_open_requested)."),
           attr<Category>("Data")});
   proto->addField(
@@ -650,9 +658,9 @@ void register_mpv() {
                    }});
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Mpv"));
   (*proto)[dynamic::CLASS].addAttribute(
-      attr<Description>("Media player: lists the client's local media files (on_local_navigate / "
+      attr<Description>("Audio player: lists the client's local audio files (on_local_navigate / "
                         "update_local_listing), uploads them to the sandbox (on_upload_requested), and "
-                        "plays sandbox media through the server's media service (on_open_requested / "
+                        "plays sandbox audio through the server's media service (on_open_requested / "
                         "on_control, status via update_status). Emits 'closed' when the window closes."));
   dynamic::addClass("wish"_key, std::move(proto), key_t{0U}, dynamic::make_factory<mpv>("wish"_key, "Mpv"_key));
 }

@@ -1,7 +1,7 @@
 // MIT License © 2026 Binary Dice Games
 /**
  * @file media.hpp
- * @brief RAII wrapper around `wish_media_handle`: an audio/video player
+ * @brief RAII wrapper around `wish_media_handle`: an audio player
  *        playing on the server (see `client::open_media()` and
  *        docs/media.md).
  */
@@ -35,21 +35,16 @@ struct media_status {
   media_state state = media_state::stopped;
   double position = 0.0; ///< Seconds.
   double duration = 0.0; ///< Seconds; 0 when the file doesn't say.
-  int32_t width = 0;
-  int32_t height = 0;
-  bool has_video = false;
-  bool has_audio = false;
   float volume = 1.0f;
   bool loop = false;
   bool audio_output = false; ///< False: the server has no sound card.
 };
 
 /**
- * @brief A media file playing (or ready to play) on the server.
+ * @brief An audio file playing (or ready to play) on the server.
  *
  * Move-only; closing (explicitly or on destruction) stops the player and
- * frees it on the server. Show its video with a `Video` widget whose
- * `player` field is `name()`.
+ * frees it on the server.
  */
 class media_player {
  public:
@@ -125,10 +120,6 @@ class media_player {
     out.state = static_cast<media_state>(s.state);
     out.position = s.position;
     out.duration = s.duration;
-    out.width = s.width;
-    out.height = s.height;
-    out.has_video = s.has_video != 0;
-    out.has_audio = s.has_audio != 0;
     out.volume = s.volume;
     out.loop = s.loop != 0;
     out.audio_output = s.audio_output != 0;

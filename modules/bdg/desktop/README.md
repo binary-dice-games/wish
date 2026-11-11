@@ -18,5 +18,5 @@ or individual modules with their own `WISH_MODULE_BDG_DESKTOP_<NAME>` option
 | [zip](zip/README.md) | Zip/unzip tool for the client's local filesystem; server owns the UI, client does the actual compress/extract/list-contents I/O. |
 | [du](du/README.md) | Disk usage analyzer: scans a folder on the client's local filesystem and shows what takes the space, as a size-sorted table and a treemap. |
 | [find](find/README.md) | Instant file search in the spirit of FSearch: indexes local folders into an in-memory database and finds files as you type. |
-| [mpv](mpv/README.md) | Media player: uploads the client's video/audio files to the sandbox and plays them with the server's media playback (`open_media()`, `Video`). |
+| [mpv](mpv/README.md) | Audio player: uploads the client's audio files (MP3, FLAC, WAV, Ogg) to the sandbox and plays them with the server's audio playback (`open_media()`). |
 | [conf](conf/README.md) | Settings: a macOS System Settings-like editor of the settings apps and the server describe in the stores (docs/settings.md). |

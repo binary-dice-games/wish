@@ -474,12 +474,11 @@ class client : public bison::rmi::client {
 
   // ── Media playback ────────────────────────────────────────────────────────
   //
-  // Audio and video played by the server (see docs/media.md): the server
-  // decodes the file and drives its own sound card, and shows video frames
-  // in `Video` widgets; the client only sends commands and needs no media
-  // library.
+  // Audio played by the server (see docs/media.md): the server decodes the
+  // file (WAV, FLAC, MP3, Ogg Vorbis) and drives its own sound card; the
+  // client only sends commands and needs no media library.
 
-  /// @brief True when the server plays media (built with FFmpeg).
+  /// @brief True when the server plays audio (built with WISH_ENABLE_MEDIA).
   bool has_media() const noexcept {
     return media_proxy_ != nullptr;
   }

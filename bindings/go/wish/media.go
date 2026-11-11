@@ -1,8 +1,8 @@
 // MIT License © 2026 Binary Dice Games
 
 // Package wish: this file wraps wish_client_c.h's media playback -- audio
-// and video files from the session sandbox, played by the server (see
-// docs/media.md). The server decodes and plays them; this package only
+// files (WAV, FLAC, MP3, Ogg Vorbis) from the session sandbox, played by the
+// server (see docs/media.md). The server decodes and plays them; this package only
 // sends commands and links no media library.
 package wish
 
@@ -65,10 +65,6 @@ type MediaStatus struct {
 	State       MediaState
 	Position    float64 // seconds
 	Duration    float64 // seconds; 0 when the file doesn't say
-	Width       int32
-	Height      int32
-	HasVideo    bool
-	HasAudio    bool
 	Volume      float32
 	Loop        bool
 	AudioOutput bool // false when the server has no sound card (silent)
@@ -84,7 +80,7 @@ type MediaPlayer struct {
 	cb     cgo.Handle // 0: no callback registered
 }
 
-// HasMedia reports whether the server plays media (it was built with FFmpeg).
+// HasMedia reports whether the server plays audio (it was built with WISH_ENABLE_MEDIA).
 func (c *Client) HasMedia() (bool, error) {
 	var avail C.int
 	rc := C.wish_media_available(c.handle, &avail)
@@ -95,9 +91,8 @@ func (c *Client) HasMedia() (bool, error) {
 }
 
 // OpenMedia opens path, a file already uploaded to the session sandbox, as
-// player name. The server plays it; show its video with a Video widget
-// whose "player" is name. Absolute paths, ".." escapes and URLs are
-// refused. Fails with WishErrUnavailable when the server plays no media.
+// player name. The server decodes it and plays it on its own sound card.
+// Absolute paths, ".." escapes and URLs are refused. Fails with WishErrUnavailable when the server plays no media.
 func (c *Client) OpenMedia(name, path string, opts MediaOptions) (*MediaPlayer, error) {
 	cName := C.CString(name)
 	defer C.free(unsafe.Pointer(cName))
@@ -186,10 +181,6 @@ func (p *MediaPlayer) Status() (MediaStatus, error) {
 		State:       MediaState(s.state),
 		Position:    float64(s.position),
 		Duration:    float64(s.duration),
-		Width:       int32(s.width),
-		Height:      int32(s.height),
-		HasVideo:    s.has_video != 0,
-		HasAudio:    s.has_audio != 0,
 		Volume:      float32(s.volume),
 		Loop:        s.loop != 0,
 		AudioOutput: s.audio_output != 0,

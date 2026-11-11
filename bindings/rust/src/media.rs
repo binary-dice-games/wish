@@ -1,10 +1,10 @@
 // MIT License © 2026 Binary Dice Games
-//! Audio/video players playing on the wish server (see
+//! Audio players playing on the wish server (see
 //! [`crate::Client::open_media`] and docs/media.md).
 //!
-//! The server decodes the file -- which must already be in the session
-//! sandbox -- and drives its own sound card; this module only sends
-//! commands and links no media library.
+//! The server decodes the file (WAV, FLAC, MP3 or Ogg Vorbis) -- which must
+//! already be in the session sandbox -- and drives its own sound card; this
+//! module only sends commands and links no media library.
 
 use std::ffi::CStr;
 use std::os::raw::{c_char, c_void};
@@ -61,10 +61,6 @@ pub struct MediaStatus {
     pub position: f64,
     /// Seconds; 0 when the file doesn't say.
     pub duration: f64,
-    pub width: i32,
-    pub height: i32,
-    pub has_video: bool,
-    pub has_audio: bool,
     pub volume: f32,
     pub loop_: bool,
     /// False when the server has no sound card (silent).
@@ -157,7 +153,7 @@ impl MediaPlayer {
         self.call(|h| unsafe { sys::wish_media_set_loop(h, loop_ as i32) }, "media_player.set_loop")
     }
 
-    /// The player's state, position and stream info.
+    /// The player's state, position and duration.
     pub fn status(&self) -> Result<MediaStatus, WishError> {
         let mut s = sys::wish_media_status::default();
         self.call(|h| unsafe { sys::wish_media_get_status(h, &mut s) }, "media_player.status")?;
@@ -165,10 +161,6 @@ impl MediaPlayer {
             state: MediaState::from_raw(s.state),
             position: s.position,
             duration: s.duration,
-            width: s.width,
-            height: s.height,
-            has_video: s.has_video != 0,
-            has_audio: s.has_audio != 0,
             volume: s.volume,
             loop_: s.loop_ != 0,
             audio_output: s.audio_output != 0,

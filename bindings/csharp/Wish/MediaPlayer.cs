@@ -1,7 +1,7 @@
 // MIT License © 2026 Binary Dice Games
 /**
  * @file MediaPlayer.cs
- * @brief An audio/video player playing on the wish server (see
+ * @brief An audio player playing on the wish server (see
  *        `Client.OpenMedia` and docs/media.md). The server decodes and plays
  *        the file; this class only sends commands.
  */
@@ -33,16 +33,12 @@ public sealed record MediaStatus(
     MediaState State,
     double Position,
     double Duration,
-    int Width,
-    int Height,
-    bool HasVideo,
-    bool HasAudio,
     float Volume,
     bool Loop,
     bool AudioOutput);
 
 /// <summary>
-/// A media file opened on the server by <see cref="Client.OpenMedia"/>. Every method blocks until
+/// An audio file opened on the server by <see cref="Client.OpenMedia"/>. Every method blocks until
 /// the server answered and throws <see cref="WishException"/> once the session ended. Dispose it
 /// (or call <see cref="Close"/>) to free it on the server.
 /// </summary>
@@ -105,13 +101,12 @@ public sealed class MediaPlayer : IDisposable
     /// <summary>Whether reaching the end restarts from the beginning.</summary>
     public void SetLoop(bool loop) => Check(Native.wish_media_set_loop(Handle, loop ? 1 : 0), "set_loop");
 
-    /// <summary>The player's state, position and stream info.</summary>
+    /// <summary>The player's state, position and duration.</summary>
     public MediaStatus Status()
     {
         Check(Native.wish_media_get_status(Handle, out NativeMediaStatus s), "status");
         return new MediaStatus(
-            (MediaState)s.State, s.Position, s.Duration, s.Width, s.Height,
-            s.HasVideo != 0, s.HasAudio != 0, s.Volume, s.Loop != 0, s.AudioOutput != 0);
+            (MediaState)s.State, s.Position, s.Duration, s.Volume, s.Loop != 0, s.AudioOutput != 0);
     }
 
     /// <summary>Why the player is in <see cref="MediaState.Error"/> ("" otherwise).</summary>
