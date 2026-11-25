@@ -72,6 +72,7 @@ wish_add_test(test_wish_home       test_wish_home.cpp)
 wish_add_test(test_settings_schema test_settings_schema.cpp)
 wish_add_test(test_user_store     test_user_store.cpp)
 wish_add_test(test_server         test_server.cpp)
+wish_add_test(test_external_render_loop test_external_render_loop.cpp)
 wish_add_test(test_standalone     test_standalone.cpp)
 wish_add_test(test_client         test_client.cpp)
 # Needs miniz_zip.h directly to build a zip fixture for the upload_package

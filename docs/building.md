@@ -269,6 +269,21 @@ the example app on an emulator.
 
 ---
 
+## Building for WebAssembly (Emscripten)
+
+`wish_server`/`wish_client` build with Emscripten (e.g. `emcmake cmake`,
+with `-pthread` in `CMAKE_C_FLAGS`/`CMAKE_CXX_FLAGS`). Under `EMSCRIPTEN`,
+civetweb and libcurl are skipped (a browser can't listen on sockets),
+`net::http_get` uses the browser's `fetch()` through `emscripten_fetch`
+(link with `-sFETCH`, added automatically; synchronous, so only off the
+browser main thread), `app/` and `examples/` are skipped, and bison builds
+without its network transports (`BISON_ENABLE_NET_TRANSPORTS=OFF`), so use
+`memory_transport`. Turn `WISH_ENABLE_WEB` and `WISH_BUILD_SHARED` off.
+Drive rendering from the browser main thread with
+`server::set_external_render_loop(true)` and `server::run_frame()` (see
+`DESIGN.md`). genie's browser build is a complete example
+(genie's `spec/20_webassembly/DESIGN.md`).
+
 ## Running the wish server
 
 `wish server` (or the standalone `wish-server` binary, equivalent flags, no
