@@ -95,6 +95,43 @@ class server : public bison::rmi::server {
   void start(bison::rmi::auth_module_ptr auth_module = nullptr, bison::dynamic listen_params = bison::dynamic{});
 
   /**
+   * @brief Choose whether `start()` runs the render loop on its own thread
+   *        (the default) or leaves it to the host, which then calls
+   *        `run_frame()` itself.
+   *
+   * The external mode exists for hosts whose rendering must happen on a
+   * thread they own and that cannot block in a loop -- e.g. the browser
+   * (Emscripten) build, where WebGL only works on the browser main thread
+   * and that thread must return to the browser after every frame. Call it
+   * before `start()`; changing it afterwards has no effect.
+   *
+   * @param external `true` to drive frames with `run_frame()`.
+   */
+  void set_external_render_loop(bool external) noexcept {
+    external_render_loop_ = external;
+  }
+
+  /// @brief See set_external_render_loop().
+  bool external_render_loop() const noexcept {
+    return external_render_loop_;
+  }
+
+  /**
+   * @brief Run one iteration of the render loop: poll renderer events,
+   *        tick, and draw a frame if one is due.
+   *
+   * Only for `set_external_render_loop(true)` servers, after `start()`. The
+   * first call runs `renderer::setup()`; once the server stops running (the
+   * renderer asked to quit, or `stop()` was called), the next call runs
+   * `renderer::teardown()` and returns `false`. Always call it from the same
+   * thread -- the renderer's thread. Unlike the internal loop it never
+   * sleeps; the host paces the calls (e.g. requestAnimationFrame).
+   *
+   * @return `true` while the server is still running.
+   */
+  bool run_frame();
+
+  /**
    * @brief Attach a shared logger that all sessions will write through.
    *
    * The logger is set as the `logger_service` of every new session; all
@@ -259,7 +296,13 @@ class server : public bison::rmi::server {
     return settings_admins_;
   }
 
-  /** @brief Stop the accept loop, render loop, and join all threads. */
+  /** @brief Stop the accept loop, render loop, and join all threads.
+   *
+   *  With `set_external_render_loop(true)`, there is no render thread to
+   *  join, and `stop()` tears the renderer down itself if `run_frame()` has
+   *  set it up but not yet torn it down -- so call `stop()` from the
+   *  `run_frame()` thread in that mode.
+   */
   void stop();
 
   /** @brief Returns true once the renderer signals it should close.
@@ -322,6 +365,15 @@ class server : public bison::rmi::server {
   bison::dynamic_ptr on_create_object(bison::rmi::context& ctx, bison::key_t ns, bison::key_t klass) override;
 
   void render_loop();
+  // One render_loop() iteration (everything but the sleep); shared by the
+  // internal loop and run_frame().
+  void render_iteration();
+
+  // See set_external_render_loop()/run_frame().
+  bool external_render_loop_{false};
+  // run_frame()-thread-only: whether setup()/teardown() have run.
+  bool external_setup_done_{false};
+  bool external_teardown_done_{false};
 
   std::unique_ptr<renderer> renderer_;
   std::thread render_thread_;

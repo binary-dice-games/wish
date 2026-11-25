@@ -10,8 +10,10 @@
 #include <context/style_service.hpp>
 #include <context/user_store_service.hpp>
 #include "src/rmi/shared/profiling.hpp"
+#ifndef BISON_NO_NET_TRANSPORTS
 #include "src/rmi/transport/socket_transport.hpp"
 #include "src/rmi/transport/tls_socket_transport.hpp"
+#endif
 #include <ui/ui_root.hpp>
 
 #ifdef WISH_AUTOMATION_ENABLED
@@ -28,6 +30,7 @@
 #include <iomanip>
 #include <memory>
 #include <sstream>
+#include <stdexcept>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -51,8 +54,16 @@ bool is_loopback_host(const std::string& host) {
 server::server(server_transport_iface& transport, std::unique_ptr<renderer> r)
     : bison::rmi::server(transport),
       renderer_(std::move(r)),
+#ifndef BISON_NO_NET_TRANSPORTS
       network_transport_(dynamic_cast<socket_server_transport*>(&transport) != nullptr ||
-                         dynamic_cast<tls_socket_server_transport*>(&transport) != nullptr) {}
+                         dynamic_cast<tls_socket_server_transport*>(&transport) != nullptr) {
+}
+#else
+      // bison built without network transports (browser build): every
+      // transport is local.
+      network_transport_(false) {
+}
+#endif
 
 void server::set_settings_admins(const std::set<std::string>& identities) {
   settings_admins_.clear();
@@ -74,7 +85,8 @@ server::~server() {
 void server::start(bison::rmi::auth_module_ptr auth_module, bison::dynamic listen_params) {
   register_all();
   running_.store(true, std::memory_order_release);
-  render_thread_ = std::thread([this]() { render_loop(); });
+  if (!external_render_loop_)
+    render_thread_ = std::thread([this]() { render_loop(); });
   try {
     listen(std::move(listen_params), std::move(auth_module));
   } catch (...) {
@@ -97,6 +109,31 @@ void server::stop() {
   if (render_thread_.joinable()) {
     render_thread_.join();
   }
+  if (external_render_loop_ && external_setup_done_ && !external_teardown_done_) {
+    external_teardown_done_ = true;
+    if (renderer_)
+      renderer_->teardown();
+  }
+}
+
+bool server::run_frame() {
+  if (!external_render_loop_)
+    throw std::logic_error("wish::server::run_frame() needs set_external_render_loop(true)");
+  if (!external_setup_done_) {
+    external_setup_done_ = true;
+    if (renderer_)
+      renderer_->setup();
+  }
+  if (running_.load(std::memory_order_acquire))
+    render_iteration();
+  if (running_.load(std::memory_order_acquire))
+    return true;
+  if (!external_teardown_done_) {
+    external_teardown_done_ = true;
+    if (renderer_)
+      renderer_->teardown();
+  }
+  return false;
 }
 
 bool server::should_quit() const {
@@ -248,6 +285,15 @@ void server::render_loop() {
   if (renderer_)
     renderer_->setup();
   while (running_.load(std::memory_order_acquire)) {
+    render_iteration();
+    std::this_thread::sleep_for(std::chrono::milliseconds{5});
+  }
+  if (renderer_)
+    renderer_->teardown();
+}
+
+void server::render_iteration() {
+  {
     if (renderer_) {
       BISON_TRACE_SCOPE("render_loop_tick");
       // poll_events() must run every iteration regardless of whether a
@@ -456,10 +502,7 @@ void server::render_loop() {
           running_.store(false, std::memory_order_release);
       }
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds{5});
   }
-  if (renderer_)
-    renderer_->teardown();
 }
 
 } // namespace bdg::wish

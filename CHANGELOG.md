@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `wish::server::set_external_render_loop(true)` + `run_frame()`: the host drives the render loop one iteration at a time on its own thread instead of `start()` spawning a render thread (used by browser builds, where rendering must happen on the browser main thread).
+- WebAssembly (Emscripten) builds of `wish_server`/`wish_client`: civetweb, libcurl, `app/` and `examples/` are skipped, and `net::http_get` uses the browser's `fetch()` (`emscripten_fetch`).
+
 - Audio playback (see [docs/media.md](docs/media.md)): clients play WAV, FLAC, MP3 and Ogg Vorbis files from their sandbox on the server, which decodes and plays them with miniaudio (compiled in, no system dependency); clients link no media library. `open_media()` / `has_media()` on `wish::client`, `wish::standalone` and `wish_app_host` return a `wish::media_player` (`play`, `pause`, `stop`, `seek`, `set_volume`, `set_loop`, `status`, `close`; `state_changed` / `ended` / `error` events). C ABI `wish_media_available()` / `wish_media_open()` / `wish_media_*` on a `wish_media_handle`; `open_media` / `OpenMedia` / `openMedia` and a `MediaPlayer` in the C++, Python, C#, Rust, Go and Java bindings.
 - `bdg/desktop/mpv` module, **Audio Player** (`wish client --run=mpv -- [FOLDER]`): lists the client's local audio files, uploads them to the sandbox's `media/` folder (double-click to upload and play), and plays the sandbox's library with a seek bar, play/pause, stop, loop and volume.
 - `WISH_ENABLE_MEDIA` CMake option (on by default).

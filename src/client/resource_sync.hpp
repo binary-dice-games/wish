@@ -42,7 +42,9 @@ inline constexpr std::size_t kResourceSyncChunkSize = 1u << 20; // 1 MiB
 inline std::string resource_version_token(const std::filesystem::path& zip) {
   auto size = std::filesystem::file_size(zip);
   auto ticks = std::filesystem::last_write_time(zip).time_since_epoch().count();
-  return std::to_string(ticks) + ":" + std::to_string(size);
+  // libc++'s file_time_type counts in __int128 (no std::to_string overload,
+  // e.g. under Emscripten); the token only needs equality, so narrow it.
+  return std::to_string(static_cast<long long>(ticks)) + ":" + std::to_string(size);
 }
 
 /**

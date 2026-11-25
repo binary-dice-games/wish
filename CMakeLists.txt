@@ -159,7 +159,12 @@ endif()
 # together so wish_server's HTTP/WebSocket sources (src/net/http_client.*,
 # src/web/civetweb_server.*) stay linkable against real targets on every
 # platform that actually builds wish_server.
-if(NOT ANDROID)
+#
+# Also skipped under EMSCRIPTEN (the browser build, see docs/building.md's
+# "WebAssembly" section): a browser tab can't listen on a socket, and curl
+# needs real sockets plus OpenSSL. net::http_get is backed by
+# emscripten_fetch there instead (src/net/http_client_emscripten.cpp).
+if(NOT ANDROID AND NOT EMSCRIPTEN)
 wish_ensure_submodules(extern/civetweb)
 set(CIVETWEB_ENABLE_WEBSOCKETS        ON  CACHE BOOL "" FORCE)
 set(CIVETWEB_ENABLE_SSL               OFF CACHE BOOL "" FORCE)
@@ -227,7 +232,7 @@ add_subdirectory(extern/curl)
 # libcurl_static/libcurl_shared BUILD_SHARED_LIBS selected -- set_target_properties
 # rejects ALIAS targets, so target the real one directly.
 set_target_properties(libcurl_static PROPERTIES FOLDER extern)
-endif()  # NOT ANDROID (civetweb + libcurl)
+endif()  # NOT ANDROID AND NOT EMSCRIPTEN (civetweb + libcurl)
 
 # Single-header image codecs, vendored via extern/stb. Unconditional (not
 # gated by WISH_ENABLE_IMGUI/WEB/SDL3, unlike most renderer-only bits above)
@@ -442,7 +447,16 @@ add_library(wish_server STATIC
 # built under ANDROID (see that block's comment near the top of this file).
 # wish_server is never actually built for the Android JNI binding (it only
 # needs wish_client_dll), so leaving this out costs that platform nothing.
-if(NOT ANDROID)
+if(EMSCRIPTEN)
+  # Browser build: the browser's own fetch() via emscripten_fetch, in its
+  # synchronous mode (allowed off the main thread with -pthread, which is
+  # where file_service::resolve_or_fetch runs -- RMI dispatch workers).
+  target_sources(wish_server PRIVATE
+    src/net/http_client.hpp
+    src/net/http_client_emscripten.cpp
+  )
+  target_link_options(wish_server PUBLIC "-sFETCH=1")
+elseif(NOT ANDROID)
   target_sources(wish_server PRIVATE
     src/net/http_client.hpp
     src/net/http_client.cpp
@@ -605,8 +619,9 @@ target_link_libraries(wish_server PRIVATE miniz)
 # libcurl backs net::http_get (src/net/http_client.cpp). Both PRIVATE since
 # <civetweb.h>/<curl/curl.h> are isolated to their respective .cpp files.
 # Neither target exists under ANDROID (see the civetweb/curl block near the
-# top of this file), matching the http_client.* target_sources() guard above.
-if(NOT ANDROID)
+# top of this file), nor under EMSCRIPTEN, matching the http_client.*
+# target_sources() guard above.
+if(NOT ANDROID AND NOT EMSCRIPTEN)
   target_link_libraries(wish_server PRIVATE civetweb-c-library libcurl)
 endif()
 
@@ -800,8 +815,11 @@ endif()
 # app, demo binaries, C++ binding examples/tests) that a `wish-abi` wheel
 # build (build.targets=["wish_client_dll", "wish_server_dll"]) never needs
 # -- skip them under SKBUILD to keep `pip install` scoped to the two ABI
-# DLLs it actually ships.
-if(NOT SKBUILD)
+# DLLs it actually ships. They are skipped under EMSCRIPTEN too: wish-cli
+# and the examples are built on bison's socket/terminal app layer, which a
+# browser build doesn't have (bison's BISON_ENABLE_NET_TRANSPORTS is OFF
+# there).
+if(NOT SKBUILD AND NOT EMSCRIPTEN)
   add_subdirectory(app)
 
   # Only auto-run here when wish is the top-level project. A project that
