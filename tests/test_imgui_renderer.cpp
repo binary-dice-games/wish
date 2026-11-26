@@ -2887,6 +2887,54 @@ TEST_F(ImguiRendererTest, InputTextFocusRequestFocusesTheField) {
   EXPECT_NE(GImGui->ActiveId, 0u) << "the text field is being edited";
 }
 
+TEST_F(ImguiRendererTest, WrapLayoutWrapsChildrenToTheAvailableWidth) {
+  std::string json = R"({"type":"WrapLayout","spacing":8,"children":{)";
+  for (int i = 0; i < 10; ++i)
+    json += std::string(i ? "," : "") + "\"b" + std::to_string(i) + "\":{\"type\":\"Button\",\"label\":\"b" +
+        std::to_string(i) + "\",\"width\":100,\"order\":" + std::to_string(i) + "}";
+  json += "}}";
+  auto map = bdg::wish::import_json(json);
+  labeled_rect_capturing_renderer r;
+  float avail = 0.0f;
+  for (int frame = 0; frame < 2; ++frame) {
+    r.begin_frame();
+    in_window([&] {
+      avail = ImGui::GetContentRegionAvail().x;
+      r.render_node(*map[""], *sess_);
+    });
+    r.end_frame();
+  }
+  const int per_line = static_cast<int>((avail + 8.0f) / 108.0f);
+  ASSERT_GT(per_line, 1);
+  ASSERT_LT(per_line, 10);
+  auto y = [&](int i) { return r.by_label["b" + std::to_string(i)].first.y; };
+  for (int i = 1; i < per_line; ++i)
+    EXPECT_FLOAT_EQ(y(i), y(0)) << i;
+  EXPECT_GT(y(per_line), y(0)) << "wrapped onto a second line";
+  EXPECT_FLOAT_EQ(r.by_label["b" + std::to_string(per_line)].first.x, r.by_label["b0"].first.x);
+}
+
+TEST_F(ImguiRendererTest, WrapLayoutPlacesLayoutTilesSideBySide) {
+  auto map = bdg::wish::import_json(R"({"type":"WrapLayout","spacing":8,"children":{
+      "t0":{"type":"VerticalLayout","width":76,"order":0,"children":{
+        "b":{"type":"Button","label":"a0","width":64,"height":64,"order":0},
+        "c":{"type":"Button","label":"cap0","order":1}}},
+      "t1":{"type":"VerticalLayout","width":76,"order":1,"children":{
+        "b":{"type":"Button","label":"a1","width":64,"height":64,"order":0},
+        "c":{"type":"Button","label":"cap1","order":1}}}}})");
+  labeled_rect_capturing_renderer r;
+  for (int frame = 0; frame < 3; ++frame) {
+    r.by_label.clear();
+    r.begin_frame();
+    in_window([&] { r.render_node(*map[""], *sess_); });
+    r.end_frame();
+  }
+  ASSERT_EQ(r.by_label.count("a1"), 1u);
+  EXPECT_FLOAT_EQ(r.by_label["a1"].first.y, r.by_label["a0"].first.y) << "same line";
+  EXPECT_GE(r.by_label["a1"].first.x, r.by_label["a0"].first.x + 76.0f) << "after the first tile";
+  EXPECT_GT(r.by_label["cap0"].first.y, r.by_label["a0"].first.y) << "caption below its thumbnail";
+}
+
 // ── ObjectInspector layout ───────────────────────────────────────────────────
 
 // An ObjectInspector renders as a vertical layout of [Table, Label]; it must

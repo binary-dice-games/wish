@@ -83,6 +83,7 @@ void render_input_int(imgui_renderer&, const ui_element& node, const context& s)
 void render_input_float(imgui_renderer&, const ui_element& node, const context& s);
 void render_drag_float(imgui_renderer&, const ui_element& node, const context& s);
 void render_drag_float_n(imgui_renderer&, const ui_element& node, const context& s);
+void render_wrap_layout(imgui_renderer& r, const ui_element& node, const context& s);
 void render_drag_int(imgui_renderer&, const ui_element& node, const context& s);
 
 // Status

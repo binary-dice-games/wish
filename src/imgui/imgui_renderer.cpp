@@ -101,6 +101,7 @@ static const render_fn_map& built_in_render_fns() {
       {"InputFloat"_key.id, render_input_float},
       {"DragFloat"_key.id, render_drag_float},
       {"DragFloatN"_key.id, render_drag_float_n},
+      {"WrapLayout"_key.id, render_wrap_layout},
       {"DragInt"_key.id, render_drag_int},
       // Status
       {"ProgressBar"_key.id, render_progress_bar},

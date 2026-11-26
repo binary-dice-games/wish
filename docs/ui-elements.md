@@ -213,6 +213,22 @@ nest them freely to build rows, columns, and grids.
 
 Neither layout emits events.
 
+### `WrapLayout`
+
+Arranges children left to right and wraps them onto new lines to fit the
+available width -- a file browser's tile view. A child's cell width is its
+`width` field when positive, else its last rendered width. A
+`VerticalLayout` child is a **tile**: its own children stack in a plain
+group (no nested layout pass), so give it a `width`; the next cell starts a
+full cell width further even when a tile draws narrower. Inside another
+layout, give the `WrapLayout` itself `width: -1` so it gets the full width.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `spacing` | `float` | `-1` | Gap between cells on a line, in pixels; negative uses the theme's item spacing. |
+
+No events.
+
 ### `Spring`
 
 An expandable, invisible space that shares whatever room is left over in a

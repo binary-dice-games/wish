@@ -2394,6 +2394,56 @@ void render_drag_float(imgui_renderer&, const ui_element& node0, const context& 
   }
 }
 
+void render_wrap_layout(imgui_renderer& r, const ui_element& node, const context& s) {
+  float spacing = node.get_as<float>("spacing"_key, -1.0f);
+  if (spacing < 0.0f)
+    spacing = ImGui::GetStyle().ItemSpacing.x;
+  const float avail = std::max(1.0f, ImGui::GetContentRegionAvail().x);
+  float line_used = 0.0f;
+  float prev_x = 0.0f; // window-local x where the previous cell started
+  float prev_w = 0.0f;
+  bool first = true;
+  ImGui::BeginGroup();
+  node.for_each_child_ordered([&](bison::key_t, ui_element& child) {
+    if (!child.visible())
+      return;
+    // A child's cell width: its explicit width, else what it last rendered
+    // as (one frame of lag for a brand-new child, like the layout measure).
+    float w = child.width(0.0f);
+    if (w <= 0.0f)
+      w = child.last_rendered_size().x;
+    if (!first) {
+      if (line_used + spacing + w <= avail) {
+        // The next cell starts a full cell width after the previous one,
+        // even when that one drew narrower than its cell.
+        ImGui::SameLine(prev_x + prev_w + spacing);
+        line_used += spacing + w;
+      } else {
+        line_used = w; // no SameLine(): ImGui starts the next line
+      }
+    } else {
+      line_used = w;
+      first = false;
+    }
+    prev_x = ImGui::GetCursorPosX();
+    prev_w = w;
+    if (child.class_key() == "VerticalLayout"_key) {
+      // A tile: its children stacked in a plain group. A nested layout pass
+      // (measure/arrange + a sized child window) would size the tile from
+      // whatever ambient region it happened to inherit, not its cell.
+      ImGui::BeginGroup();
+      child.for_each_child_ordered([&](bison::key_t, ui_element& cell) {
+        if (cell.visible())
+          r.render_node(cell, s);
+      });
+      ImGui::EndGroup();
+    } else {
+      r.render_node(child, s);
+    }
+  });
+  ImGui::EndGroup();
+}
+
 void render_drag_float_n(imgui_renderer&, const ui_element& node, const context& s) {
   auto values = node.get_as<std::vector<float>>("value"_key, std::vector<float>{0.0f, 0.0f});
   if (values.empty())
