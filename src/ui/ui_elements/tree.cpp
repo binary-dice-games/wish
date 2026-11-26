@@ -102,11 +102,30 @@ void register_tree() {
                               "ImGui never drives it. Update this field in the 'toggled' handler to "
                               "keep the header responsive to clicks."),
             attr<Category>("State")});
+    proto->addField(
+        "icon"_rkey,
+        field{
+            std::string{},
+            attr<DisplayName>("Icon"),
+            attr<Description>("Image drawn between the arrow and the label, at text height and tinted to "
+                              "the text color (e.g. \"res/icons/tune.png\"). Sandboxed like Image.src."),
+            attr<Category>("Content")});
+    proto->addField(
+        "menu_button"_rkey,
+        field{
+            false,
+            attr<DisplayName>("Menu Button"),
+            attr<Description>("When true and the header has a ContextMenu child, a small '...' button at "
+                              "the right end of the header opens that menu too (a property inspector's "
+                              "per-component menu). The ContextMenu always opens on a right click of "
+                              "the header and is never drawn as content."),
+            attr<Category>("Behavior")});
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("CollapsingHeader"));
     (*proto)[dynamic::CLASS].addAttribute(
         attr<Description>("A bold section header that toggles visibility of its children. "
                           "Emits 'toggled' with {open: bool} when expanded or collapsed. "
-                          "Its 'open' field is server-authoritative (forced every frame)."));
+                          "Its 'open' field is server-authoritative (forced every frame). A "
+                          "ContextMenu child opens on a right click of the header."));
     dynamic::addClass(
         "wish"_key,
         std::move(proto),

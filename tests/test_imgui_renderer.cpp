@@ -2856,6 +2856,69 @@ TEST_F(ImguiRendererTest, TreeNodeContextMenuChildOpensOnRowRightClickAndIsNotCo
   EXPECT_EQ(r.by_label.count("Rename"), 1u) << "right-clicking the row opens the menu";
 }
 
+TEST_F(ImguiRendererTest, CollapsingHeaderContextMenuIsNotContentAndOpensOnRightClick) {
+  auto map = bdg::wish::import_json(
+      R"({"type":"CollapsingHeader","label":"Section","open":true,"menu_button":true,"children":{
+            "c":{"type":"Button","label":"Inside"},
+            "menu":{"type":"ContextMenu","children":{"remove":{"type":"MenuItem","label":"Remove"}}}}})");
+  labeled_rect_capturing_renderer r;
+  tree_mouse_driver d{r, *map[""], *sess_, [&](const std::function<void()>& fn) { in_window(fn); }};
+  d.frame();
+  EXPECT_EQ(r.by_label.count("Inside"), 1u);
+  EXPECT_EQ(r.by_label.count("Remove"), 0u);
+  d.click(ImVec2{60.0f, 14.0f}, ImGuiMouseButton_Right);
+  r.by_label.clear();
+  d.frame();
+  EXPECT_EQ(r.by_label.count("Remove"), 1u);
+}
+
+TEST_F(ImguiRendererTest, InputTextFocusRequestFocusesTheField) {
+  auto map = bdg::wish::import_json(R"({"type":"InputText","label":"##name","value":"abc"})");
+  auto frame = [&] {
+    renderer_->begin_frame();
+    in_window([&] { renderer_->render_node(*map[""], *sess_); });
+    renderer_->end_frame();
+  };
+  frame();
+  EXPECT_EQ(GImGui->ActiveId, 0u);
+  (*map[""])["focus_request"_key] = int32_t{1};
+  frame();
+  frame();
+  EXPECT_NE(GImGui->ActiveId, 0u) << "the text field is being edited";
+}
+
+// ── ObjectInspector layout ───────────────────────────────────────────────────
+
+// An ObjectInspector renders as a vertical layout of [Table, Label]; it must
+// also measure as one, or a following sibling draws over its table's rows
+// (the measure used to fall back to its last item: about one row tall).
+TEST_F(ImguiRendererTest, ObjectInspectorTakesItsFullHeightInAVerticalLayout) {
+  auto map = bdg::wish::import_json(R"({"type":"VerticalLayout","children":{
+      "oi":{"type":"ObjectInspector","order":0,"children":{
+        "t":{"type":"Table","columns":2,"order":0,"children":{
+          "r0":{"type":"TableRow","order":0,"children":{"a":{"type":"Button","label":"r0"}}},
+          "r1":{"type":"TableRow","order":1,"children":{"a":{"type":"Button","label":"r1"}}},
+          "r2":{"type":"TableRow","order":2,"children":{"a":{"type":"Button","label":"r2"}}},
+          "r3":{"type":"TableRow","order":3,"children":{"a":{"type":"Button","label":"r3"}}}}},
+        "d":{"type":"Label","text":"description","order":1}}},
+      "after":{"type":"Button","label":"after","order":1}}})");
+  labeled_rect_capturing_renderer r;
+  for (int frame = 0; frame < 4; ++frame) {
+    r.by_label.clear();
+    r.begin_frame();
+    in_window([&] { r.render_node(*map[""], *sess_); });
+    r.end_frame();
+  }
+  ASSERT_EQ(r.by_label.count("r0"), 1u);
+  ASSERT_EQ(r.by_label.count("r3"), 1u);
+  ASSERT_EQ(r.by_label.count("after"), 1u);
+  EXPECT_GE(r.by_label["after"].first.y, r.by_label["r3"].second.y) << "the next sibling starts below the last row";
+  // What the enclosing layout budgets for it (its measured size) spans the
+  // whole table, not just its last item.
+  const float rows_span = r.by_label["r3"].second.y - r.by_label["r0"].first.y;
+  EXPECT_GE(map["oi"]->measured_size().y, rows_span);
+}
+
 // ── CollapsingHeader: server-authoritative "open" state ──────────────────────
 
 TEST_F(ImguiRendererTest, CollapsingHeaderHidesChildrenWhenServerOpenIsFalse) {

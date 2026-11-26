@@ -7,10 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- An `ObjectInspector` inside a layout was measured as its last row only, so the next sibling drew over its table.
+
 ### Added
 
 - `Button.checked` (toggle-button pressed look, e.g. a toolbar's active tool) and `Button.enabled` (grays the button out and ignores its shortcut).
 - `MenuItem.shortcut_scope`: `"app"` makes a menu item's shortcut work from any window of the same app, e.g. an editor menu bar whose Ctrl+Z must work from every docked panel.
+- `DragFloatN` widget: a 2-4 component vector editor with X/Y/Z/W axis tags, committing once per drag (or live). `DragFloat.width`.
+- `ObjectInspector`: 2-4 component float vectors use `DragFloatN`; a `wish::Angle` field is edited in degrees; `ColorField` is a full-width swatch; field descriptions are name tooltips; `label_ratio` for stretching, resizable name/value columns.
+- `ColorEdit`: `NoInputs` with a width draws a swatch that wide opening the picker.
+- `CollapsingHeader`: `icon`, a `ContextMenu` child on right click, and `menu_button`.
+- `InputText.focus_request`.
 - `TreeNode`: `clicked` carries `{ctrl, shift}`; new `activated` event on double click and `double_click_toggles` field; `drag_type`/`drop_type`/`tooltip` and a `ContextMenu` child attach to the node's own row.
 - `DockSpaceViewport` header strip: children other than `Window`/`DockLayout` (a toolbar `HorizontalLayout`, `Shortcut`s, the `MenuBar`) render above the dockspace, which takes the remaining height.
 

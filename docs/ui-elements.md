@@ -409,6 +409,7 @@ A single-line text field.
 | `label` | `string` | `""` | Input field label. |
 | `value` | `string` | `""` | Current text value. |
 | `hint` | `string` | `""` | Placeholder shown when empty. |
+| `focus_request` | `int32` | `0` | Change the value (e.g. increment it) to move keyboard focus into the field, e.g. for a Rename command. |
 | `max_length` | `int32` | `256` | Max characters (1–65536). |
 | `width` | `float` | `0.0` | Width in pixels; `0` = ImGui default, `-1` = fill remaining width. |
 | `flags` | `int32` (flags) | `0` | ImGuiInputTextFlags bitmask; e.g. `"EnterReturnsTrue"` (`64`) makes `changed` fire only on Enter instead of every keystroke. |
@@ -426,7 +427,7 @@ A color swatch that opens a picker popup when clicked.
 | `label` | `string` | `""` | Caption to the left of the swatch. |
 | `value` | `float[3\|4]` | `[1,1,1,1]` | Current color as `[r,g,b]` or `[r,g,b,a]` components in `[0,1]`. The component count (3 or 4) selects `ColorEdit3` vs. `ColorEdit4`. |
 | `flags` | `int32` (flags) | `0` | ImGuiColorEditFlags bitmask (e.g. `NoAlpha=2`, `NoInputs=32`, `PickerHueWheel=16777216`). |
-| `width` | `float` | `0.0` | Width in pixels; `0` = ImGui default, `-1` = fill remaining width. |
+| `width` | `float` | `0.0` | Width in pixels; `0` = ImGui default, `-1` = fill remaining width. With `NoInputs` (32) in `flags` and a non-zero width, the control is a swatch that wide (no numeric inputs) opening the picker on click -- a property inspector's color field. |
 
 **Events:** `changed` — `{ value: float[] }` (same component count as the
 current `value`).
@@ -459,6 +460,26 @@ Click-and-drag to change; double-click to type a value directly.
 | `format` | `string` | `"%.3f"` | (`DragFloat` only) printf display format. |
 
 **Events:** `changed` — `{ value: int32|float }`.
+
+`DragFloat` also takes `width` (`0` = ImGui default, `-1` = fill).
+
+#### `DragFloatN`
+A 2-4 component float vector editor: one drag field per component, each
+behind a colored axis tag (X red, Y green, Z blue, W gray), as in Godot and
+Unity property inspectors.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `label` | `string` | `""` | Optional caption right of the fields. |
+| `value` | `float[2..4]` | `[0,0]` | Current components; the count decides how many fields are shown. |
+| `speed` | `float` | `0.1` | Change per pixel dragged. |
+| `min` / `max` | `float` | `0` | Clamp; `min == max` is unclamped. |
+| `format` | `string` | `"%.2f"` | printf display format of every component. |
+| `axis_labels` | `string` | `"X\nY\nZ\nW"` | Newline-separated tag per component; an empty line draws none. |
+| `width` | `float` | `0.0` | Total width; `-1` fills the available width. |
+| `live` | `bool` | `false` | `true`: `changed` on every edit while dragging. `false`: once per committed edit (release, Enter, focus loss) -- one undo step per drag. |
+
+**Events:** `changed` — `{ value: float[] }`.
 
 #### `Combo`
 A drop-down selection list.
@@ -751,9 +772,14 @@ A bold section header toggling visibility of its children.
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `label` | `string` | `""` | Header text. |
+| `icon` | `string` | `""` | Image drawn between the arrow and the label, tinted to the text color. Sandboxed like `Image.src`. |
+| `menu_button` | `bool` | `false` | With a `ContextMenu` child: a small "more" button at the right end of the header also opens that menu (a property inspector's per-component menu). |
 | `open` | `bool` | `true` | Expanded/collapsed state. **Server-authoritative:** forced into ImGui every frame (`ImGuiCond_Always`), unlike `TreeNode.open`. Update this field in the `toggled` handler to keep the header responsive to clicks; leaving it stale pins the header regardless of user input. Rebuilding the header's subtree every frame is safe as long as `open` stays consistent. |
 
 **Events:** `toggled` — `{ open: bool }`.
+
+A `ContextMenu` child opens on a right click of the header and is never
+drawn as content.
 
 ### Tables
 

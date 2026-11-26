@@ -50,6 +50,9 @@ void ensure_target_class_registered() {
       "color"_key,
       field{std::vector<float>{1.0f, 0.0f, 0.0f, 1.0f}, attr<DisplayName>("Color"), attr<ColorField>()});
   proto->addField("offset"_key, field{std::vector<float>{1.0f, 2.0f}, attr<DisplayName>("Offset")});
+  proto->addField(
+      "rotation"_key, field{0.0f, attr<DisplayName>("Rotation"), attr<wish::Angle>(), attr<Order>(50)});
+  proto->addField("weights"_key, field{std::vector<float>{1.0f, 2.0f, 3.0f, 4.0f, 5.0f}, attr<DisplayName>("Weights")});
   proto->addField("ref"_key, field{dynamic_ptr{}, attr<DisplayName>("Ref"), attr<DropTarget>("MyAsset")});
   proto->addField("secret"_key, field{int32_t{0}, attr<DisplayName>("Secret"), attr<Hidden>()});
   proto->addField("second"_key, field{int32_t{0}, attr<DisplayName>("Second"), attr<Order>(2)});
@@ -147,7 +150,7 @@ TEST_F(ObjectInspectorTest, ConstructWithTargetBuildsOneRowPerVisibleField) {
       ++row_count;
   }
   // 13 fields declared minus "secret" (Hidden) = 12 visible rows.
-  EXPECT_EQ(row_count, 12);
+  EXPECT_EQ(row_count, 14);
 }
 
 // ── Field -> widget dispatch table ───────────────────────────────────────────
@@ -267,14 +270,80 @@ TEST_F(ObjectInspectorDispatchTest, ColorFieldGetsColorEdit) {
   EXPECT_EQ(v->size(), 4u);
 }
 
-TEST_F(ObjectInspectorDispatchTest, PlainVectorFieldGetsCommaTextInputText) {
+TEST_F(ObjectInspectorDispatchTest, TwoToFourComponentVectorGetsDragFloatN) {
   auto w = find_value_widget("Offset");
+  ASSERT_TRUE(w);
+  EXPECT_EQ(w->as<bison::key_t>(dynamic::CLASS), "DragFloatN"_key);
+  auto* v = w->findField<std::vector<float>>("value"_key);
+  ASSERT_NE(v, nullptr);
+  EXPECT_EQ(*v, (std::vector<float>{1.0f, 2.0f}));
+
+  auto* oi = find_inspector();
+  ASSERT_NE(oi, nullptr);
+  dynamic payload;
+  payload["value"_key] = std::vector<float>{3.0f, 4.0f};
+  auto edit = oi->handle_changed((*w)["__wish_id"_key].as<bison::key_t>(), payload);
+  ASSERT_TRUE(edit);
+  EXPECT_EQ(edit->new_value.as<std::vector<float>>(edit->field_name), (std::vector<float>{3.0f, 4.0f}));
+}
+
+TEST_F(ObjectInspectorDispatchTest, LongerVectorFallsBackToCommaTextInputText) {
+  auto w = find_value_widget("Weights");
   ASSERT_TRUE(w);
   EXPECT_EQ(w->as<bison::key_t>(dynamic::CLASS), "InputText"_key);
   auto* v = w->findField<std::string>("value"_key);
   ASSERT_NE(v, nullptr);
-  EXPECT_NE(v->find("1"), std::string::npos);
-  EXPECT_NE(v->find("2"), std::string::npos);
+  EXPECT_NE(v->find("5"), std::string::npos);
+}
+
+TEST_F(ObjectInspectorDispatchTest, AngleFieldEditsInDegreesAndCommitsRadians) {
+  (*target_)["rotation"_key] = 1.5707964f; // pi/2
+  auto* oi = find_inspector();
+  ASSERT_NE(oi, nullptr);
+  oi->set_target(*srv_->last_session, target_);
+  auto w = find_value_widget("Rotation");
+  ASSERT_TRUE(w);
+  EXPECT_EQ(w->as<bison::key_t>(dynamic::CLASS), "DragFloat"_key);
+  EXPECT_NEAR(w->get_as<float>("value"_key, 0.0f), 90.0f, 1e-3f);
+
+  dynamic payload;
+  payload["value"_key] = 180.0f;
+  auto edit = oi->handle_changed((*w)["__wish_id"_key].as<bison::key_t>(), payload);
+  ASSERT_TRUE(edit);
+  EXPECT_NEAR(edit->new_value.as<float>(edit->field_name), 3.14159265f, 1e-5f);
+}
+
+TEST_F(ObjectInspectorDispatchTest, ColorFieldIsAFullWidthSwatchWithoutInputs) {
+  auto w = find_value_widget("Color");
+  ASSERT_TRUE(w);
+  EXPECT_EQ(w->as<bison::key_t>(dynamic::CLASS), "ColorEdit"_key);
+  EXPECT_TRUE(w->get_as<int32_t>("flags"_key, 0) & 32) << "ImGuiColorEditFlags_NoInputs";
+  EXPECT_LT(w->get_as<float>("width"_key, 0.0f), 0.0f);
+}
+
+TEST_F(ObjectInspectorDispatchTest, FieldDescriptionIsTheNameTooltip) {
+  for (auto& [path, elem] : srv_->last_session->ui_objects) {
+    if (path.size() < 5 || path.substr(path.size() - 5) != ".name")
+      continue;
+    if (elem->get_as<std::string>("text"_key, std::string{}) == "Active") {
+      EXPECT_EQ(elem->get_as<std::string>("tooltip"_key, std::string{}), "On/off.");
+      return;
+    }
+  }
+  FAIL() << "no Active row";
+}
+
+TEST_F(ObjectInspectorDispatchTest, LabelRatioMakesBothColumnsStretch) {
+  auto* oi = find_inspector();
+  ASSERT_NE(oi, nullptr);
+  (*oi)["label_ratio"_key] = 0.4f;
+  oi->set_target(*srv_->last_session, target_);
+  for (auto& [path, elem] : srv_->last_session->ui_objects) {
+    if (path.size() > 10 && path.substr(path.size() - 10) == ".col_field") {
+      EXPECT_EQ(elem->get_as<int32_t>("flags"_key, 0), 8) << "ImGuiTableColumnFlags_WidthStretch";
+      EXPECT_FLOAT_EQ(elem->get_as<float>("init_width"_key, 0.0f), 0.4f);
+    }
+  }
 }
 
 TEST_F(ObjectInspectorDispatchTest, DynamicPtrFieldWithDropTargetGetsDropButton) {
@@ -455,5 +524,5 @@ TEST_F(ObjectInspectorTest, SetTargetMethodRebuildsRows) {
         path.find(".name") == std::string::npos)
       ++row_count_after;
   }
-  EXPECT_EQ(row_count_after, 12);
+  EXPECT_EQ(row_count_after, 14);
 }

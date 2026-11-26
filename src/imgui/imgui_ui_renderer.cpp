@@ -960,6 +960,15 @@ void render_input_text(imgui_renderer&, const ui_element& node0, const context& 
   if (width != 0.0f)
     ImGui::SetNextItemWidth(width);
 
+  // focus_request: a change of value (e.g. an increment from a Rename
+  // command) moves keyboard focus into the field, selecting its text.
+  if (int32_t request = node0.get_as<int32_t>("focus_request"_key, 0);
+      request != node0.get_as<int32_t>("__focus_seen__"_key, 0)) {
+    const_cast<ui_element&>(node0)["__focus_seen__"_key] = request;
+    ImGui::SetKeyboardFocusHere();
+    s.dirty.store(kDirtySettleFrames, std::memory_order_release);
+  }
+
   std::vector<char> buf(static_cast<size_t>(maxlen) + 1, '\0');
   auto copy_len = std::min(static_cast<size_t>(maxlen), current.size());
   std::copy_n(current.c_str(), copy_len, buf.data());
@@ -1007,10 +1016,33 @@ void render_color_edit(imgui_renderer&, const ui_element& node0, const context& 
     comps[i] = value[i];
 
   const access_key_label ak = access_key_of(label);
-  set_next_access_key(ak);
-  bool changed = use_alpha ? ImGui::ColorEdit4(ak.text, comps.data(), ImGuiColorEditFlags(flags))
-                           : ImGui::ColorEdit3(ak.text, comps.data(), ImGuiColorEditFlags(flags));
-  underline_trailing_label(ak);
+  bool changed = false;
+  if ((flags & ImGuiColorEditFlags_NoInputs) && width != 0.0f) {
+    // A swatch as wide as `width` (ImGui's own NoInputs swatch is a fixed
+    // frame-height square) that opens the picker on click -- the
+    // Godot/Unity property-inspector color field.
+    const float w = width < 0.0f ? ImGui::GetContentRegionAvail().x : width;
+    const ImVec4 col(comps[0], comps[1], comps[2], use_alpha ? comps[3] : 1.0f);
+    ImGui::PushID(ak.text);
+    const ImGuiColorEditFlags button_flags =
+        ImGuiColorEditFlags(flags) & (ImGuiColorEditFlags_AlphaPreviewHalf | ImGuiColorEditFlags_NoAlpha);
+    if (ImGui::ColorButton("##swatch", col, button_flags, ImVec2(std::max(1.0f, w), ImGui::GetFrameHeight())))
+      ImGui::OpenPopup("##picker");
+    if (ImGui::BeginPopup("##picker")) {
+      if (ImGui::IsWindowAppearing())
+        s.dirty.store(kDirtySettleFrames, std::memory_order_release);
+      const ImGuiColorEditFlags picker_flags = ImGuiColorEditFlags(flags) & ~ImGuiColorEditFlags_NoInputs;
+      changed = use_alpha ? ImGui::ColorPicker4("##p", comps.data(), picker_flags)
+                          : ImGui::ColorPicker3("##p", comps.data(), picker_flags);
+      ImGui::EndPopup();
+    }
+    ImGui::PopID();
+  } else {
+    set_next_access_key(ak);
+    changed = use_alpha ? ImGui::ColorEdit4(ak.text, comps.data(), ImGuiColorEditFlags(flags))
+                        : ImGui::ColorEdit3(ak.text, comps.data(), ImGuiColorEditFlags(flags));
+    underline_trailing_label(ak);
+  }
 
   if (changed) {
     std::vector<float> new_val(comps.begin(), comps.begin() + (use_alpha ? 4 : 3));
@@ -2058,7 +2090,57 @@ void render_collapsing_header(imgui_renderer& r, const ui_element& node0, const 
   // first frame -- no spurious event, no loop.
   bool want_open = node.open(true);
   ImGui::SetNextItemOpen(want_open, ImGuiCond_Always);
-  bool is_open = ImGui::CollapsingHeader(label.c_str());
+
+  const ui_element* context_menu = nullptr;
+  node.for_each_child_ordered([&](bison::key_t, ui_element& child) {
+    if (!context_menu && child.class_key() == "ContextMenu"_key)
+      context_menu = &child;
+  });
+  const bool menu_button = context_menu && node0.get_as<bool>("menu_button"_key, false);
+  const std::string icon = node0.get_as<std::string>("icon"_key, std::string{});
+  ImTextureID icon_tex = load_icon_texture(r, s, icon);
+
+  // With an icon, the label is shifted right by a run of spaces wide enough
+  // for it, and the icon is drawn into that gap (the header keeps one ImGui
+  // item, so hit testing and the open state are unchanged).
+  std::string shown = label;
+  if (icon_tex) {
+    const float room = ImGui::GetTextLineHeight() + ImGui::GetStyle().ItemInnerSpacing.x;
+    const float space = std::max(1.0f, ImGui::CalcTextSize(" ").x);
+    const std::string id_suffix = shown.find("##") == std::string::npos ? "##" + shown : std::string{};
+    shown = std::string(static_cast<size_t>(std::ceil(room / space)), ' ') + shown + id_suffix;
+  }
+  ImGuiTreeNodeFlags header_flags = menu_button ? ImGuiTreeNodeFlags_AllowOverlap : ImGuiTreeNodeFlags_None;
+  bool is_open = ImGui::CollapsingHeader(shown.c_str(), header_flags);
+  const ImGuiID header_id = ImGui::GetItemID();
+  const ImVec2 header_min = ImGui::GetItemRectMin();
+  const ImVec2 header_max = ImGui::GetItemRectMax();
+  if (icon_tex) {
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const float line = ImGui::GetTextLineHeight();
+    const ImVec2 at(header_min.x + style.FramePadding.x * 3.0f + ImGui::GetFontSize(),
+                    header_min.y + (header_max.y - header_min.y - line) * 0.5f);
+    ImGui::GetWindowDrawList()->AddImage(icon_tex, at, ImVec2(at.x + line, at.y + line), ImVec2(0, 0), ImVec2(1, 1),
+                                         ImGui::GetColorU32(ImGuiCol_Text));
+  }
+  // The ContextMenu attaches to the header (the last item right now).
+  if (context_menu)
+    r.render_node(*context_menu, s);
+  if (menu_button) {
+    const float size = header_max.y - header_min.y;
+    ImGui::SameLine();
+    ImGui::SetCursorScreenPos(ImVec2(header_max.x - size, header_min.y));
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+    if (ImTextureID more = load_icon_texture(r, s, "res/icons/more.png")) {
+      if (icon_button("##menu", more, ImGui::GetStyleColorVec4(ImGuiCol_Text), ImVec2(size, size)))
+        ImGui::OpenPopup(header_id);
+    } else if (ImGui::Button("...##menu", ImVec2(size, size))) {
+      ImGui::OpenPopup(header_id);
+    }
+    ImGui::PopStyleColor();
+    if (ImGui::IsItemHovered())
+      ImGui::SetTooltip("More");
+  }
 
   if (node.toggled_since_last_frame(is_open)) {
     // Keep the server-authoritative field in sync with the click straight
@@ -2079,7 +2161,10 @@ void render_collapsing_header(imgui_renderer& r, const ui_element& node0, const 
   }
 
   if (is_open)
-    render_children(r, node, s);
+    node.for_each_child_ordered([&](bison::key_t, ui_element& child) {
+      if (&child != context_menu)
+        r.render_node(child, s);
+    });
 }
 
 // ── Selection ─────────────────────────────────────────────────────────────────
@@ -2297,12 +2382,93 @@ void render_drag_float(imgui_renderer&, const ui_element& node0, const context& 
   float v = val;
   const access_key_label ak = access_key_of(label);
   set_next_access_key(ak);
+  if (float width = node.width(0.0f); width != 0.0f)
+    ImGui::SetNextItemWidth(width);
   const bool changed = ImGui::DragFloat(ak.text, &v, speed, vmin, vmax, fmt.c_str());
   underline_trailing_label(ak);
   if (changed) {
     const_cast<ui_element&>(node0)["value"_key] = v;
     dynamic payload;
     payload["value"_key] = v;
+    enqueue_event(s, node.wish_id(), "changed"_key, std::move(payload));
+  }
+}
+
+void render_drag_float_n(imgui_renderer&, const ui_element& node, const context& s) {
+  auto values = node.get_as<std::vector<float>>("value"_key, std::vector<float>{0.0f, 0.0f});
+  if (values.empty())
+    return;
+  if (values.size() > 4)
+    values.resize(4);
+  const size_t n = values.size();
+  const float speed = node.get_as<float>("speed"_key, 0.1f);
+  const float vmin = node.get_as<float>("min"_key, 0.0f);
+  const float vmax = node.get_as<float>("max"_key, 0.0f);
+  const std::string fmt = node.get_as<std::string>("format"_key, std::string{"%.2f"});
+  const bool live = node.get_as<bool>("live"_key, false);
+  std::vector<std::string> tags;
+  {
+    const std::string all = node.get_as<std::string>("axis_labels"_key, std::string{"X\nY\nZ\nW"});
+    size_t start = 0;
+    while (tags.size() < n) {
+      size_t nl = all.find('\n', start);
+      tags.push_back(all.substr(start, nl == std::string::npos ? std::string::npos : nl - start));
+      if (nl == std::string::npos)
+        break;
+      start = nl + 1;
+    }
+    tags.resize(n);
+  }
+  static const ImU32 kAxisColors[4] = {
+      IM_COL32(196, 64, 64, 255), IM_COL32(84, 160, 64, 255), IM_COL32(64, 112, 208, 255),
+      IM_COL32(128, 128, 128, 255)};
+
+  const ImGuiStyle& style = ImGui::GetStyle();
+  float total = node.width(0.0f);
+  if (total < 0.0f || total == 0.0f)
+    total = total < 0.0f ? ImGui::GetContentRegionAvail().x : ImGui::CalcItemWidth();
+  const float spacing = style.ItemInnerSpacing.x;
+  const float each = std::max(1.0f, (total - spacing * float(n - 1)) / float(n));
+  const float frame_h = ImGui::GetFrameHeight();
+
+  bool changed = false;
+  bool committed = false;
+  ImGui::PushID(stable_id(node).c_str());
+  ImGui::BeginGroup();
+  for (size_t i = 0; i < n; ++i) {
+    if (i > 0)
+      ImGui::SameLine(0.0f, spacing);
+    ImGui::PushID(int(i));
+    float field_w = each;
+    if (!tags[i].empty()) {
+      // A small colored tag in front of the field, like Godot/Unity.
+      const ImVec2 text = ImGui::CalcTextSize(tags[i].c_str());
+      const float tag_w = text.x + style.FramePadding.x;
+      const ImVec2 p = ImGui::GetCursorScreenPos();
+      ImDrawList* dl = ImGui::GetWindowDrawList();
+      dl->AddRectFilled(p, ImVec2(p.x + tag_w, p.y + frame_h), kAxisColors[i], style.FrameRounding,
+                        ImDrawFlags_RoundCornersLeft);
+      dl->AddText(ImVec2(p.x + (tag_w - text.x) * 0.5f, p.y + (frame_h - text.y) * 0.5f), IM_COL32_WHITE,
+                  tags[i].c_str());
+      ImGui::Dummy(ImVec2(tag_w, frame_h));
+      ImGui::SameLine(0.0f, 0.0f);
+      field_w = std::max(1.0f, each - tag_w);
+    }
+    ImGui::SetNextItemWidth(field_w);
+    if (ImGui::DragFloat("##c", &values[i], speed, vmin, vmax, fmt.c_str()))
+      changed = true;
+    if (ImGui::IsItemDeactivatedAfterEdit())
+      committed = true;
+    ImGui::PopID();
+  }
+  ImGui::EndGroup();
+  ImGui::PopID();
+
+  if (changed)
+    const_cast<ui_element&>(node)["value"_key] = values;
+  if (live ? changed : committed) {
+    dynamic payload;
+    payload["value"_key] = values;
     enqueue_event(s, node.wish_id(), "changed"_key, std::move(payload));
   }
 }

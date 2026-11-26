@@ -107,11 +107,13 @@ them).
 | `int32_t` | `Range` | `SliderInt` (`min`/`max` from `Range`) |
 | `int32_t` | — | `InputInt` |
 | `float` | `Range` | `SliderFloat` |
+| `float` | `wish::Angle` | `DragFloat` in degrees (stored in radians; edits are converted back) |
 | `float` | — | `InputFloat` |
 | `std::string` | `Multiline` | `InputText` with `multiline=true` |
 | `std::string` | — | `InputText` |
-| `std::vector<float>` | `ColorField` | `ColorEdit` |
-| `std::vector<float>` | — | `InputText`, comma-separated (component count preserved on commit) |
+| `std::vector<float>` | `ColorField` | `ColorEdit` as a full-width swatch (`NoInputs`) opening the picker |
+| `std::vector<float>` (2-4 components) | — | `DragFloatN` (X/Y/Z/W fields, one commit per drag) |
+| `std::vector<float>` (other sizes) | — | `InputText`, comma-separated (component count preserved on commit) |
 | `dynamic_ptr` | `DropTarget` | read-only reference `Button`, also a drop target (`handle_dropped()` surfaces the drop) |
 | `dynamic_ptr` | — | read-only reference `Button` (not a drop target) |
 | anything else (`key_t`/`hash_t`) | — | read-only `Label` |
@@ -154,3 +156,14 @@ classes are also registered server-side.
   `multiline`/`height` fields.
 - [DESIGN.md](../DESIGN.md) — `object_inspector`'s place among wish's other
   "Key Abstractions".
+
+## Presentation options
+
+- Every field's `Description` is also a hover tooltip on its name, so an
+  inspector can drop the description panel (`show_description_panel:
+  false`) without losing the text.
+- `label_ratio` (`float`, default `0`): `0` keeps the name column a fixed
+  140 px; a value in `(0, 0.9]` makes both columns stretch, the name column
+  taking that fraction, and lets the user resize them.
+- `wish::Angle` (`object_inspector.hpp`) marks a radian `float` to edit in
+  degrees.
