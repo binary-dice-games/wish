@@ -54,6 +54,16 @@ void register_tree() {
                               "available width."),
             attr<Category>("Behavior")});
     proto->addField(
+        "double_click_toggles"_rkey,
+        field{
+            true,
+            attr<DisplayName>("Double Click Toggles"),
+            attr<Description>("With 'open_on_arrow', whether a double click on the label also "
+                              "expands/collapses the node. Set false when a double click means "
+                              "something else (it always emits 'activated'), e.g. a scene tree "
+                              "whose double click frames the object."),
+            attr<Category>("Behavior")});
+    proto->addField(
         "icon"_rkey,
         field{
             std::string{},
@@ -67,8 +77,11 @@ void register_tree() {
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("TreeNode"));
     (*proto)[dynamic::CLASS].addAttribute(
         attr<Description>("A collapsible tree node with an arrow. "
-                          "Emits 'toggled' with {open: bool} when the user expands or collapses it, and "
-                          "'clicked' when it is clicked without toggling."));
+                          "Emits 'toggled' with {open: bool} when the user expands or collapses it, "
+                          "'clicked' with {ctrl, shift} when it is clicked without toggling, and "
+                          "'activated' with {ctrl, shift} on a double click. drag_type/drop_type "
+                          "and tooltip attach to the node row itself, and a ContextMenu child opens "
+                          "on a right click of the row."));
     dynamic::addClass(
         "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_tree_node>("wish"_key, "TreeNode"_key));
   }

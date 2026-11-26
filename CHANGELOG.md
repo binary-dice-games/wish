@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `Button.checked` (toggle-button pressed look, e.g. a toolbar's active tool) and `Button.enabled` (grays the button out and ignores its shortcut).
+- `MenuItem.shortcut_scope`: `"app"` makes a menu item's shortcut work from any window of the same app, e.g. an editor menu bar whose Ctrl+Z must work from every docked panel.
+- `TreeNode`: `clicked` carries `{ctrl, shift}`; new `activated` event on double click and `double_click_toggles` field; `drag_type`/`drop_type`/`tooltip` and a `ContextMenu` child attach to the node's own row.
+- `DockSpaceViewport` header strip: children other than `Window`/`DockLayout` (a toolbar `HorizontalLayout`, `Shortcut`s, the `MenuBar`) render above the dockspace, which takes the remaining height.
+
 - `wish::server::set_external_render_loop(true)` + `run_frame()`: the host drives the render loop one iteration at a time on its own thread instead of `start()` spawning a render thread (used by browser builds, where rendering must happen on the browser main thread).
 - WebAssembly (Emscripten) builds of `wish_server`/`wish_client`: civetweb, libcurl, `app/` and `examples/` are skipped, and `net::http_get` uses the browser's `fetch()` (`emscripten_fetch`).
 

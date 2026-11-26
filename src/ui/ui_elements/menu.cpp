@@ -75,6 +75,17 @@ void register_menu() {
                               "disabled Menu, do not fire."),
             attr<Category>("Content")});
     proto->addField(
+        "shortcut_scope"_rkey,
+        field{
+            std::string{"window"},
+            attr<DisplayName>("Shortcut Scope"),
+            attr<Description>("Where 'shortcut' is active while the menu is closed: \"window\" (the "
+                              "default) while the window owning the MenuBar/MenuButton has keyboard "
+                              "focus; \"app\" while any window of the same app (session) has focus "
+                              "-- e.g. an editor's main menu whose Ctrl+Z must work from every "
+                              "docked panel."),
+            attr<Category>("Behavior")});
+    proto->addField(
         "checked"_rkey,
         field{
             false,

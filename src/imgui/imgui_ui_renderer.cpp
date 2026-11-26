@@ -793,6 +793,14 @@ void render_button(imgui_renderer& r, const ui_element& node0, const context& s)
   int32_t h = node.height_i(0);
   ImVec2 size{float(w), float(h)};
   bool clicked = false;
+  const bool enabled = node.enabled(true);
+  const bool checked = node.checked(false);
+  if (!enabled)
+    ImGui::BeginDisabled();
+  if (checked) {
+    ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+  }
   set_next_access_key(label);
   if (ImTextureID icon = load_icon_texture(r, s, node.icon_ref())) {
     const std::string& color = node.icon_color_ref();
@@ -811,11 +819,17 @@ void render_button(imgui_renderer& r, const ui_element& node0, const context& s)
   // `shortcut` (e.g. "Ctrl+S"): a second, explicit binding on top of the
   // label's access key -- ImGui::Shortcut() rather than SetNextItemShortcut(),
   // which allows only one chord per item and is taken by the access key.
-  if (shortcut_pressed(
-          node.shortcut_ref(),
-          parse_shortcut_scope(node.shortcut_scope_ref()),
-          s.has_keyboard_focus(ImGui::GetFrameCount())))
+  if (checked)
+    ImGui::PopStyleColor(2);
+  if (enabled && shortcut_pressed(
+                     node.shortcut_ref(),
+                     parse_shortcut_scope(node.shortcut_scope_ref()),
+                     s.has_keyboard_focus(ImGui::GetFrameCount())))
     clicked = true;
+  if (!enabled) {
+    ImGui::EndDisabled();
+    clicked = false;
+  }
   if (clicked)
     enqueue_event(s, node.wish_id(), "clicked"_key, dynamic{});
 }
@@ -1696,7 +1710,11 @@ static void process_menu_shortcuts(const ui_element& node, const context& s) {
         process_menu_shortcuts(child, s);
     } else if (cls == "MenuItem"_key) {
       const auto& item = static_cast<const ui_menu_item&>(child);
-      if (item.enabled(true) && shortcut_pressed(item.shortcut_ref()))
+      if (item.enabled(true) &&
+          shortcut_pressed(
+              item.shortcut_ref(),
+              parse_shortcut_scope(item.shortcut_scope_ref()),
+              s.has_keyboard_focus(ImGui::GetFrameCount())))
         activate_menu_item(item, s);
     }
   });
@@ -1942,8 +1960,11 @@ void render_tree_node(imgui_renderer& r, const ui_element& node0, const context&
       leaf ? (ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen) : ImGuiTreeNodeFlags_None;
   if (selected)
     flags |= ImGuiTreeNodeFlags_Selected;
-  if (node.open_on_arrow(false))
-    flags |= ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick | ImGuiTreeNodeFlags_SpanAvailWidth;
+  if (node.open_on_arrow(false)) {
+    flags |= ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth;
+    if (node.double_click_toggles(true))
+      flags |= ImGuiTreeNodeFlags_OpenOnDoubleClick;
+  }
 
   // With an icon the node itself is drawn label-less (the icon and the text
   // follow on the same line, below), so it spans the row to keep the whole
@@ -1954,8 +1975,32 @@ void render_tree_node(imgui_renderer& r, const ui_element& node0, const context&
     flags |= ImGuiTreeNodeFlags_SpanAvailWidth;
   bool is_open = ImGui::TreeNodeEx(icon_tex ? "##node" : label.c_str(), flags);
 
-  if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
-    enqueue_event(s, node.wish_id(), "clicked"_key, dynamic{});
+  {
+    // Modifiers are captured now: the event is delivered later, when
+    // ImGuiIO's key state may have moved on (same as Table's row events).
+    const ImGuiIO& io = ImGui::GetIO();
+    auto modifiers = [&] {
+      dynamic payload;
+      payload["ctrl"_key] = io.KeyCtrl;
+      payload["shift"_key] = io.KeyShift;
+      return payload;
+    };
+    // At most one of activated/clicked per frame.
+    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen())
+      enqueue_event(s, node.wish_id(), "activated"_key, modifiers());
+    else if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
+      enqueue_event(s, node.wish_id(), "clicked"_key, modifiers());
+  }
+  // drag_type/drop_type, tooltip and a ContextMenu child attach to the node
+  // row itself -- the last item right now -- not to whatever the icon,
+  // label or children draw afterwards (render_node() skips its own generic
+  // drag/tooltip handling for TreeNode for that reason).
+  handle_drag_drop(node0, s);
+  handle_tooltip(node0);
+  node.for_each_child_ordered([&](bison::key_t, ui_element& child) {
+    if (child.class_key() == "ContextMenu"_key)
+      r.render_node(child, s);
+  });
   // A node selected by the application (e.g. revealed deep in a tree that
   // was just expanded) is scrolled into view. One frame is not enough: the
   // window's scroll range still reflects last frame's shorter content, so
@@ -1991,7 +2036,10 @@ void render_tree_node(imgui_renderer& r, const ui_element& node0, const context&
   }
 
   if (is_open && !leaf) {
-    render_children(r, node, s);
+    node.for_each_child_ordered([&](bison::key_t, ui_element& child) {
+      if (child.class_key() != "ContextMenu"_key)
+        r.render_node(child, s);
+    });
     ImGui::TreePop();
   }
 }
@@ -2445,6 +2493,32 @@ void render_dockspace_viewport(imgui_renderer& r, const ui_element& node0, const
   if (!open)
     enqueue_event(s, node.wish_id(), "closed"_key, dynamic{});
 
+  // Header strip: every child that is neither a Window nor a DockLayout
+  // (e.g. a MenuBar, a toolbar HorizontalLayout, a Shortcut) renders before
+  // the DockSpace, so a toolbar row sits between the menu bar and the dock
+  // area and the DockSpace below takes only the remaining height. Indented
+  // by the item spacing, since the host window itself has no padding.
+  {
+    const ImGuiStyle& style = ImGui::GetStyle();
+    bool indented = false;
+    node.for_each_child_ordered([&](bison::key_t, ui_element& child) {
+      const bison::key_t klass = child.class_key();
+      if (klass == "Window"_key || klass == "DockLayout"_key)
+        return;
+      const bool chrome = klass == "MenuBar"_key || klass == "Shortcut"_key || klass == "ContextMenu"_key;
+      if (!chrome && !indented) {
+        ImGui::Dummy(ImVec2(0.0f, style.ItemSpacing.y * 0.5f));
+        ImGui::Indent(style.ItemSpacing.x);
+        indented = true;
+      }
+      r.render_node(child, s);
+    });
+    if (indented) {
+      ImGui::Unindent(style.ItemSpacing.x);
+      ImGui::Dummy(ImVec2(0.0f, style.ItemSpacing.y * 0.5f));
+    }
+  }
+
   ImGuiDockNodeFlags dock_flags = ImGuiDockNodeFlags(flags);
   if (passthru)
     dock_flags |= ImGuiDockNodeFlags_PassthruCentralNode;
@@ -2479,9 +2553,10 @@ void render_dockspace_viewport(imgui_renderer& r, const ui_element& node0, const
     }
   }
 
-  // Non-Window children (e.g. MenuBar, or a DockLayout targeting this same
-  // id -- see DockLayout.target's doc comment) are rendered inside the host
-  // window. "Reset layout" rebuilds the DockLayout even though it was
+  // DockLayout children (targeting this same id -- see DockLayout.target's
+  // doc comment) are rendered inside the host window, after the DockSpace
+  // exists; every other non-Window child already rendered above, as the
+  // header strip. "Reset layout" rebuilds the DockLayout even though it was
   // applied before, then docks the frame's other windows back into the
   // central node, so a panel dragged out (or left floating by a corrupted
   // imgui.ini) comes home.
@@ -2489,10 +2564,10 @@ void render_dockspace_viewport(imgui_renderer& r, const ui_element& node0, const
   r.set_force_dock_layout(reset_layout);
   std::vector<std::string> placed;
   node.for_each_child_ordered([&](bison::key_t, ui_element& child) {
-    if (child.class_key() == "Window"_key)
+    if (child.class_key() != "DockLayout"_key)
       return;
     r.render_node(child, s);
-    if (reset_layout && child.class_key() == "DockLayout"_key)
+    if (reset_layout)
       for (auto& w : dock_layout_windows(child))
         placed.push_back(std::move(w));
   });

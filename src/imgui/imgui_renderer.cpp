@@ -769,11 +769,15 @@ void imgui_renderer::render_node(const ui_element& node, const context& s) {
 
   // Attaches to whatever ImGui item the dispatch call above drew last -- see
   // handle_drag_drop()'s own doc comment.
-  handle_drag_drop(node, s);
+  // TreeNode handles both itself, on its own row item (render_tree_node()).
+  const bool self_hosts_item_hooks = node.class_key() == "TreeNode"_key;
+  if (!self_hosts_item_hooks)
+    handle_drag_drop(node, s);
 
   // Generic per-element tooltip: attaches to the same last-drawn item as
   // handle_drag_drop() above, so it shares the "leaf element only" caveat.
-  handle_tooltip(node);
+  if (!self_hosts_item_hooks)
+    handle_tooltip(node);
 
   // "__wish_highlight__" is an ad-hoc field (like "__wish_id"/"__path__"
   // elsewhere) set by the editor module to box whichever preview widget

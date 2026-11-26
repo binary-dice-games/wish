@@ -781,8 +781,18 @@ class ui_button : public cloneable_ui_element<ui_button> {
   const std::string& shortcut_scope_ref() const {
     return cached_field_str(shortcut_scope_field_, bison::key_t{"shortcut_scope"});
   }
+  /// @brief `checked` (toggle-button pressed look).
+  bool checked(bool def = false) const {
+    return cached_field_or<bool>(checked_field_, bison::key_t{"checked"}, def);
+  }
+  /// @brief `enabled` (false grays the button out).
+  bool enabled(bool def = true) const {
+    return cached_field_or<bool>(enabled_field_, bison::key_t{"enabled"}, def);
+  }
 
  private:
+  mutable bison::field* checked_field_ = nullptr;
+  mutable bison::field* enabled_field_ = nullptr;
   mutable bison::field* label_field_ = nullptr;
   mutable bison::field* icon_field_ = nullptr;
   mutable bison::field* icon_color_field_ = nullptr;
@@ -1242,6 +1252,10 @@ class ui_menu_item : public cloneable_ui_element<ui_menu_item> {
   ///        all three every frame.
   const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
   const std::string& shortcut_ref() const { return cached_field_str(shortcut_field_, bison::key_t{"shortcut"}); }
+  /// @brief Zero-copy `shortcut_scope` ("window"/"app"; empty fallback).
+  const std::string& shortcut_scope_ref() const {
+    return cached_field_str(shortcut_scope_field_, bison::key_t{"shortcut_scope"});
+  }
   const std::string& copy_text_ref() const { return cached_field_str(copy_text_field_, bison::key_t{"copy_text"}); }
   /// @brief Zero-copy `icon` (empty fallback) -- see `cached_field_str()`.
   const std::string& icon_ref() const {
@@ -1249,6 +1263,7 @@ class ui_menu_item : public cloneable_ui_element<ui_menu_item> {
   }
 
  private:
+  mutable bison::field* shortcut_scope_field_ = nullptr;
   mutable bison::field* icon_field_ = nullptr;
   mutable bison::field* label_field_ = nullptr;
   mutable bison::field* enabled_field_ = nullptr;
@@ -1390,6 +1405,9 @@ class ui_tree_node : public cloneable_ui_element<ui_tree_node> {
   bool open_on_arrow(bool def = false) const {
     return cached_field_or<bool>(open_on_arrow_field_, bison::key_t{"open_on_arrow"}, def);
   }
+  bool double_click_toggles(bool def = true) const {
+    return cached_field_or<bool>(double_click_toggles_field_, bison::key_t{"double_click_toggles"}, def);
+  }
   /// @brief Zero-copy `icon` (empty fallback) -- see `cached_field_str()`.
   const std::string& icon_ref() const { return cached_field_str(icon_field_, bison::key_t{"icon"}); }
 
@@ -1440,6 +1458,7 @@ class ui_tree_node : public cloneable_ui_element<ui_tree_node> {
   }
 
  private:
+  mutable bison::field* double_click_toggles_field_ = nullptr;
   mutable bison::field* label_field_ = nullptr;
   mutable bison::field* open_field_ = nullptr;
   mutable bison::field* leaf_field_ = nullptr;

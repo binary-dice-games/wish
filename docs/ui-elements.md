@@ -360,6 +360,8 @@ A clickable button.
 | `icon_color` | `string` | `""` | Optional `"#RRGGBBAA"`/`"#RRGGBB"` tint for `icon`; empty uses the theme's text color. |
 | `shortcut` | `string` | `""` | [Keyboard shortcut](#keyboard-navigation-access-keys-and-shortcuts) that clicks the button, e.g. `"Ctrl+S"`, `"F5"`; shown in the tooltip as `"<tooltip or label> (Ctrl+S)"`. |
 | `shortcut_scope` | `string` | `"window"` | `"app"` makes `shortcut` work from any window of the same app, not just the button's own. |
+| `checked` | `bool` | `false` | Draws the button in its pressed (active) color: a toggle button, e.g. the selected tool of a toolbar group. Display only; the owner sets it from `clicked`. |
+| `enabled` | `bool` | `true` | When `false` the button is grayed out, cannot be clicked and its `shortcut` is ignored. |
 
 **Events:** `clicked` — button pressed (by mouse, `Space`/`Enter`, access key or shortcut); no payload.
 
@@ -570,6 +572,7 @@ A selectable leaf inside a `Menu`.
 |---|---|---|---|
 | `label` | `string` | `""` | Item text; `"&New"` makes `N` activate it while its menu is open. |
 | `shortcut` | `string` | `""` | [Keyboard shortcut](#keyboard-navigation-access-keys-and-shortcuts), shown on the right and active while the menu is closed: pressing it emits `clicked` (while the window owning the `MenuBar`/`MenuButton` has focus). Not fired when the item or its `Menu` is disabled. |
+| `shortcut_scope` | `string` | `"window"` | `"app"`: `shortcut` fires while any window of the same app has focus (an editor's main menu whose Ctrl+Z must work from every docked panel), not only the window owning the `MenuBar`/`MenuButton`. |
 | `checked` | `bool` | `false` | Shows a check mark. Purely display -- the renderer never modifies it; the form sets it explicitly (e.g. a radio-style submenu recomputing it from server state). |
 | `enabled` | `bool` | `true` | When `false`, grayed out and cannot be clicked. |
 | `copy_text` | `string` | `""` | When non-empty, clicking the item also copies this text to the OS clipboard (`ImGui::SetClipboardText`, on the render thread) -- a "Copy ..." action with no client round trip. |
@@ -727,10 +730,17 @@ A collapsible node with an expand arrow.
 | `selected` | `bool` | `false` | Draws the node highlighted. Application-owned (set it from a `clicked` handler); a node that becomes selected is scrolled into view. |
 | `icon` | `string` | `""` | Image drawn between the arrow and the label, at text height and tinted to the text color (e.g. `"res/icons/folder.png"`). Sandboxed like `Image.src`: relative to the session resource directory. |
 | `open_on_arrow` | `bool` | `false` | Only the arrow (or a double click) toggles the node, so a click on the label just emits `clicked`; the node also spans the available width. Use it for trees whose nodes are selectable (e.g. a folder tree). |
+| `double_click_toggles` | `bool` | `true` | With `open_on_arrow`, whether a double click on the label also toggles the node. Set `false` when a double click means something else (it always emits `activated`), e.g. a scene tree whose double click frames the object. |
 
 **Events:**
 - `toggled` — `{ open: bool }`, when the user expands or collapses the node.
-- `clicked` — the node was clicked without toggling it; no payload.
+- `clicked` — `{ ctrl: bool, shift: bool }`, the node was clicked without toggling it (modifiers captured at click time, as for `Table.row_selected`, so the owner can implement multi-selection).
+- `activated` — `{ ctrl: bool, shift: bool }`, a double click on the node. At most one of `clicked`/`activated` fires per frame.
+
+`drag_type`/`drag_payload`/`drop_type` and `tooltip` attach to the node's own
+row (not to its icon, label or children), and a `ContextMenu` child opens on
+a right click of the row instead of rendering as a child -- so a tree can
+offer drag-and-drop reparenting and per-node menus.
 
 To fill a large tree lazily, create a node without children and add them in
 its `toggled` handler (set `leaf` once a node turns out to have none).
@@ -915,7 +925,10 @@ root (its ancestors' labels joined by `/`) and its `details` line.
 
 #### `DockSpaceViewport`
 Full-viewport dockspace host; `Window` children nested under it become
-independently dockable panels. A child `Window` with no explicit `pos_x`/
+independently dockable panels. Every other child except a `DockLayout`
+(the `MenuBar`, a toolbar `HorizontalLayout`, `Shortcut`s) renders as a
+**header strip** above the dockspace, which takes the remaining height -- a
+fixed toolbar between the menu bar and the docked panels. A child `Window` with no explicit `pos_x`/
 `pos_y` docks into this dockspace by default (see `Window.pos_x`); give it a
 position or the `NoDocking` flag to keep it floating. Emits `closed` when
 `closable` and its close button is clicked.

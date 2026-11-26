@@ -302,6 +302,72 @@ TEST_F(ImguiRendererTest, ButtonEmitsClickedEvent) {
   EXPECT_EQ(last_event, "clicked"_key);
 }
 
+TEST_F(ImguiRendererTest, DisabledButtonDoesNotEmitClicked) {
+  auto map = bdg::wish::import_json(R"({"type":"Button","label":"OK","enabled":false})");
+  renderer_->begin_frame();
+  ImGuiID btn_id{0};
+  in_window([&] {
+    renderer_->render_node(*map[""], *sess_);
+    btn_id = ImGui::GetItemID();
+  });
+  renderer_->end_frame();
+
+  ImGui::NewFrame();
+  fake_click(btn_id);
+  in_window([&] { renderer_->render_node(*map[""], *sess_); });
+  ImGui::EndFrame();
+  EXPECT_TRUE(sess_->pending_events.empty());
+}
+
+TEST_F(ImguiRendererTest, CheckedButtonDrawsInTheActiveColor) {
+  auto count_color = [](ImU32 color) {
+    int n = 0;
+    for (ImGuiWindow* w : GImGui->Windows)
+      if (w->Active)
+        for (const ImDrawVert& v : w->DrawList->VtxBuffer)
+          n += v.col == color ? 1 : 0;
+    return n;
+  };
+  for (bool checked : {false, true}) {
+    auto map = bdg::wish::import_json(
+        std::string(R"({"type":"Button","label":"Tool","checked":)") + (checked ? "true" : "false") + "}");
+    renderer_->begin_frame();
+    in_window([&] { renderer_->render_node(*map[""], *sess_); });
+    ImU32 active = ImGui::GetColorU32(ImGuiCol_ButtonActive);
+    int n = count_color(active);
+    renderer_->end_frame();
+    if (checked)
+      EXPECT_GT(n, 0) << "a checked button's frame uses ButtonActive";
+    else
+      EXPECT_EQ(n, 0);
+  }
+}
+
+TEST_F(ImguiRendererTest, DockSpaceViewportHeaderStripSitsAboveTheDockspace) {
+  ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+  auto node_top = [&](const char* json) {
+    auto map = bdg::wish::import_json(json);
+    float top = -1.0f;
+    for (int frame = 0; frame < 2; ++frame) {
+      renderer_->begin_frame();
+      renderer_->render_node(*map[""], *sess_);
+      ImGuiWindow* host = ImGui::FindWindowByName("hdr_test");
+      if (host) {
+        ImGuiID id = ImHashStr("hdr_test", 0, host->ID);
+        if (ImGuiDockNode* node = ImGui::DockBuilderGetNode(id))
+          top = node->Pos.y;
+      }
+      renderer_->end_frame();
+    }
+    return top;
+  };
+  float plain = node_top(R"({"type":"DockSpaceViewport","id":"hdr_test"})");
+  float with_header = node_top(R"({"type":"DockSpaceViewport","id":"hdr_test","children":{
+      "toolbar":{"type":"HorizontalLayout","children":{"b":{"type":"Button","label":"Tool"}}}}})");
+  ASSERT_GE(plain, 0.0f);
+  EXPECT_GT(with_header, plain + ImGui::GetFrameHeight() * 0.9f) << "the toolbar takes height above the dock area";
+}
+
 // ── Icons on Button / MenuButton / MenuItem ─────────────────────────────────
 
 /// Resolves every texture request to one fake id, so an `icon` field draws
@@ -2705,6 +2771,89 @@ TEST_F(ImguiRendererTest, TreeNodeUserToggleIsWrittenBackToOpenField) {
     toggled = toggled || ev.event_name == "toggled"_key;
   EXPECT_TRUE(toggled);
   EXPECT_FALSE(map[""]->get_as<bool>("open"_key, true));
+}
+
+// ── TreeNode: modifiers, activation, row-level hooks ─────────────────────────
+
+namespace {
+
+/// Renders @p root in the test window once per call, feeding real mouse
+/// input through ImGuiIO's event queue (no fake ActiveId state).
+struct tree_mouse_driver {
+  labeled_rect_capturing_renderer& r;
+  const ui_element& root;
+  context& s;
+  std::function<void(const std::function<void()>&)> in_window;
+
+  void frame() {
+    r.begin_frame();
+    in_window([&] { r.render_node(root, s); });
+    r.end_frame();
+  }
+  void click(ImVec2 at, ImGuiMouseButton button = ImGuiMouseButton_Left) {
+    ImGuiIO& io = ImGui::GetIO();
+    io.AddMousePosEvent(at.x, at.y);
+    frame();
+    io.AddMouseButtonEvent(button, true);
+    frame();
+    io.AddMouseButtonEvent(button, false);
+    frame();
+  }
+};
+
+std::vector<dynamic> tree_events(context& s, bdg::bison::key_t name) {
+  std::vector<dynamic> out;
+  for (auto& ev : s.pending_events)
+    if (ev.event_name == name)
+      out.push_back(ev.payload);
+  return out;
+}
+
+} // namespace
+
+TEST_F(ImguiRendererTest, TreeNodeClickCarriesModifiersAndDoubleClickActivates) {
+  auto map = bdg::wish::import_json(
+      R"({"type":"TreeNode","label":"Node","open_on_arrow":true,"double_click_toggles":false,"children":{
+            "c":{"type":"Button","label":"Inside"}}})");
+  (*map[""])["__wish_id"_key] = bdg::bison::key_t{77u};
+  labeled_rect_capturing_renderer r;
+  tree_mouse_driver d{r, *map[""], *sess_, [&](const std::function<void()>& fn) { in_window(fn); }};
+  d.frame();
+  const ImVec2 label{80.0f, 14.0f}; // on the row, right of the arrow
+
+  ImGui::GetIO().AddKeyEvent(ImGuiMod_Ctrl, true);
+  d.click(label);
+  ImGui::GetIO().AddKeyEvent(ImGuiMod_Ctrl, false);
+  d.frame();
+  auto clicked = tree_events(*sess_, "clicked"_key);
+  ASSERT_EQ(clicked.size(), 1u);
+  EXPECT_TRUE(clicked[0].get_as<bool>("ctrl"_key, false));
+  EXPECT_FALSE(clicked[0].get_as<bool>("shift"_key, true));
+
+  // A second click right away is a double click: 'activated', and with
+  // double_click_toggles off the node stays closed.
+  sess_->pending_events.clear();
+  d.click(label);
+  EXPECT_EQ(tree_events(*sess_, "activated"_key).size(), 1u);
+  EXPECT_TRUE(tree_events(*sess_, "toggled"_key).empty());
+  EXPECT_FALSE(map[""]->get_as<bool>("open"_key, true));
+}
+
+TEST_F(ImguiRendererTest, TreeNodeContextMenuChildOpensOnRowRightClickAndIsNotContent) {
+  auto map = bdg::wish::import_json(
+      R"({"type":"TreeNode","label":"Node","open":true,"open_on_arrow":true,"children":{
+            "c":{"type":"Button","label":"Inside"},
+            "menu":{"type":"ContextMenu","children":{"rename":{"type":"MenuItem","label":"Rename"}}}}})");
+  labeled_rect_capturing_renderer r;
+  tree_mouse_driver d{r, *map[""], *sess_, [&](const std::function<void()>& fn) { in_window(fn); }};
+  d.frame();
+  EXPECT_EQ(r.by_label.count("Inside"), 1u);
+  EXPECT_EQ(r.by_label.count("Rename"), 0u) << "a ContextMenu is not drawn as a child row";
+
+  d.click(ImVec2{80.0f, 14.0f}, ImGuiMouseButton_Right);
+  r.by_label.clear();
+  d.frame();
+  EXPECT_EQ(r.by_label.count("Rename"), 1u) << "right-clicking the row opens the menu";
 }
 
 // ── CollapsingHeader: server-authoritative "open" state ──────────────────────
