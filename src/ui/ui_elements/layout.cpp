@@ -118,6 +118,29 @@ void register_layout() {
         "Layout"_key,
         dynamic::make_factory<ui_horizontal_layout>("wish"_key, "HorizontalLayout"_key));
   }
+
+  // WrapLayout — places children left to right, wrapping to a new line
+  // when the next one would not fit the available width (a tile grid).
+  {
+    auto proto = dynamic_ptr{"WrapLayout"_rkey, {}};
+    proto->addField(
+        "spacing"_rkey,
+        field{
+            float{-1.0f},
+            attr<DisplayName>("Spacing"),
+            attr<Description>("Gap between children on a line and between lines, in pixels; negative "
+                              "uses the theme's item spacing."),
+            attr<Category>("Layout")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Wrap Layout"));
+    (*proto)[dynamic::CLASS].addAttribute(
+        attr<Description>("Arranges children left-to-right and wraps them onto new lines to fit the "
+                          "available width, like a file browser's tile view. A child's width is its "
+                          "'width' field when positive, else its last rendered width. A VerticalLayout "
+                          "child is a tile: its own children stack in a plain group (no nested layout "
+                          "pass), so give it a 'width'."));
+    dynamic::addClass(
+        "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_element>("wish"_key, "WrapLayout"_key));
+  }
 }
 
 } // namespace bdg::wish

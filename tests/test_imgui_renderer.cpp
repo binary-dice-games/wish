@@ -302,6 +302,72 @@ TEST_F(ImguiRendererTest, ButtonEmitsClickedEvent) {
   EXPECT_EQ(last_event, "clicked"_key);
 }
 
+TEST_F(ImguiRendererTest, DisabledButtonDoesNotEmitClicked) {
+  auto map = bdg::wish::import_json(R"({"type":"Button","label":"OK","enabled":false})");
+  renderer_->begin_frame();
+  ImGuiID btn_id{0};
+  in_window([&] {
+    renderer_->render_node(*map[""], *sess_);
+    btn_id = ImGui::GetItemID();
+  });
+  renderer_->end_frame();
+
+  ImGui::NewFrame();
+  fake_click(btn_id);
+  in_window([&] { renderer_->render_node(*map[""], *sess_); });
+  ImGui::EndFrame();
+  EXPECT_TRUE(sess_->pending_events.empty());
+}
+
+TEST_F(ImguiRendererTest, CheckedButtonDrawsInTheActiveColor) {
+  auto count_color = [](ImU32 color) {
+    int n = 0;
+    for (ImGuiWindow* w : GImGui->Windows)
+      if (w->Active)
+        for (const ImDrawVert& v : w->DrawList->VtxBuffer)
+          n += v.col == color ? 1 : 0;
+    return n;
+  };
+  for (bool checked : {false, true}) {
+    auto map = bdg::wish::import_json(
+        std::string(R"({"type":"Button","label":"Tool","checked":)") + (checked ? "true" : "false") + "}");
+    renderer_->begin_frame();
+    in_window([&] { renderer_->render_node(*map[""], *sess_); });
+    ImU32 active = ImGui::GetColorU32(ImGuiCol_ButtonActive);
+    int n = count_color(active);
+    renderer_->end_frame();
+    if (checked)
+      EXPECT_GT(n, 0) << "a checked button's frame uses ButtonActive";
+    else
+      EXPECT_EQ(n, 0);
+  }
+}
+
+TEST_F(ImguiRendererTest, DockSpaceViewportHeaderStripSitsAboveTheDockspace) {
+  ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+  auto node_top = [&](const char* json) {
+    auto map = bdg::wish::import_json(json);
+    float top = -1.0f;
+    for (int frame = 0; frame < 2; ++frame) {
+      renderer_->begin_frame();
+      renderer_->render_node(*map[""], *sess_);
+      ImGuiWindow* host = ImGui::FindWindowByName("hdr_test");
+      if (host) {
+        ImGuiID id = ImHashStr("hdr_test", 0, host->ID);
+        if (ImGuiDockNode* node = ImGui::DockBuilderGetNode(id))
+          top = node->Pos.y;
+      }
+      renderer_->end_frame();
+    }
+    return top;
+  };
+  float plain = node_top(R"({"type":"DockSpaceViewport","id":"hdr_test"})");
+  float with_header = node_top(R"({"type":"DockSpaceViewport","id":"hdr_test","children":{
+      "toolbar":{"type":"HorizontalLayout","children":{"b":{"type":"Button","label":"Tool"}}}}})");
+  ASSERT_GE(plain, 0.0f);
+  EXPECT_GT(with_header, plain + ImGui::GetFrameHeight() * 0.9f) << "the toolbar takes height above the dock area";
+}
+
 // ── Icons on Button / MenuButton / MenuItem ─────────────────────────────────
 
 /// Resolves every texture request to one fake id, so an `icon` field draws
@@ -2705,6 +2771,200 @@ TEST_F(ImguiRendererTest, TreeNodeUserToggleIsWrittenBackToOpenField) {
     toggled = toggled || ev.event_name == "toggled"_key;
   EXPECT_TRUE(toggled);
   EXPECT_FALSE(map[""]->get_as<bool>("open"_key, true));
+}
+
+// ── TreeNode: modifiers, activation, row-level hooks ─────────────────────────
+
+namespace {
+
+/// Renders @p root in the test window once per call, feeding real mouse
+/// input through ImGuiIO's event queue (no fake ActiveId state).
+struct tree_mouse_driver {
+  labeled_rect_capturing_renderer& r;
+  const ui_element& root;
+  context& s;
+  std::function<void(const std::function<void()>&)> in_window;
+
+  void frame() {
+    r.begin_frame();
+    in_window([&] { r.render_node(root, s); });
+    r.end_frame();
+  }
+  void click(ImVec2 at, ImGuiMouseButton button = ImGuiMouseButton_Left) {
+    ImGuiIO& io = ImGui::GetIO();
+    io.AddMousePosEvent(at.x, at.y);
+    frame();
+    io.AddMouseButtonEvent(button, true);
+    frame();
+    io.AddMouseButtonEvent(button, false);
+    frame();
+  }
+};
+
+std::vector<dynamic> tree_events(context& s, bdg::bison::key_t name) {
+  std::vector<dynamic> out;
+  for (auto& ev : s.pending_events)
+    if (ev.event_name == name)
+      out.push_back(ev.payload);
+  return out;
+}
+
+} // namespace
+
+TEST_F(ImguiRendererTest, TreeNodeClickCarriesModifiersAndDoubleClickActivates) {
+  auto map = bdg::wish::import_json(
+      R"({"type":"TreeNode","label":"Node","open_on_arrow":true,"double_click_toggles":false,"children":{
+            "c":{"type":"Button","label":"Inside"}}})");
+  (*map[""])["__wish_id"_key] = bdg::bison::key_t{77u};
+  labeled_rect_capturing_renderer r;
+  tree_mouse_driver d{r, *map[""], *sess_, [&](const std::function<void()>& fn) { in_window(fn); }};
+  d.frame();
+  const ImVec2 label{80.0f, 14.0f}; // on the row, right of the arrow
+
+  ImGui::GetIO().AddKeyEvent(ImGuiMod_Ctrl, true);
+  d.click(label);
+  ImGui::GetIO().AddKeyEvent(ImGuiMod_Ctrl, false);
+  d.frame();
+  auto clicked = tree_events(*sess_, "clicked"_key);
+  ASSERT_EQ(clicked.size(), 1u);
+  EXPECT_TRUE(clicked[0].get_as<bool>("ctrl"_key, false));
+  EXPECT_FALSE(clicked[0].get_as<bool>("shift"_key, true));
+
+  // A second click right away is a double click: 'activated', and with
+  // double_click_toggles off the node stays closed.
+  sess_->pending_events.clear();
+  d.click(label);
+  EXPECT_EQ(tree_events(*sess_, "activated"_key).size(), 1u);
+  EXPECT_TRUE(tree_events(*sess_, "toggled"_key).empty());
+  EXPECT_FALSE(map[""]->get_as<bool>("open"_key, true));
+}
+
+TEST_F(ImguiRendererTest, TreeNodeContextMenuChildOpensOnRowRightClickAndIsNotContent) {
+  auto map = bdg::wish::import_json(
+      R"({"type":"TreeNode","label":"Node","open":true,"open_on_arrow":true,"children":{
+            "c":{"type":"Button","label":"Inside"},
+            "menu":{"type":"ContextMenu","children":{"rename":{"type":"MenuItem","label":"Rename"}}}}})");
+  labeled_rect_capturing_renderer r;
+  tree_mouse_driver d{r, *map[""], *sess_, [&](const std::function<void()>& fn) { in_window(fn); }};
+  d.frame();
+  EXPECT_EQ(r.by_label.count("Inside"), 1u);
+  EXPECT_EQ(r.by_label.count("Rename"), 0u) << "a ContextMenu is not drawn as a child row";
+
+  d.click(ImVec2{80.0f, 14.0f}, ImGuiMouseButton_Right);
+  r.by_label.clear();
+  d.frame();
+  EXPECT_EQ(r.by_label.count("Rename"), 1u) << "right-clicking the row opens the menu";
+}
+
+TEST_F(ImguiRendererTest, CollapsingHeaderContextMenuIsNotContentAndOpensOnRightClick) {
+  auto map = bdg::wish::import_json(
+      R"({"type":"CollapsingHeader","label":"Section","open":true,"menu_button":true,"children":{
+            "c":{"type":"Button","label":"Inside"},
+            "menu":{"type":"ContextMenu","children":{"remove":{"type":"MenuItem","label":"Remove"}}}}})");
+  labeled_rect_capturing_renderer r;
+  tree_mouse_driver d{r, *map[""], *sess_, [&](const std::function<void()>& fn) { in_window(fn); }};
+  d.frame();
+  EXPECT_EQ(r.by_label.count("Inside"), 1u);
+  EXPECT_EQ(r.by_label.count("Remove"), 0u);
+  d.click(ImVec2{60.0f, 14.0f}, ImGuiMouseButton_Right);
+  r.by_label.clear();
+  d.frame();
+  EXPECT_EQ(r.by_label.count("Remove"), 1u);
+}
+
+TEST_F(ImguiRendererTest, InputTextFocusRequestFocusesTheField) {
+  auto map = bdg::wish::import_json(R"({"type":"InputText","label":"##name","value":"abc"})");
+  auto frame = [&] {
+    renderer_->begin_frame();
+    in_window([&] { renderer_->render_node(*map[""], *sess_); });
+    renderer_->end_frame();
+  };
+  frame();
+  EXPECT_EQ(GImGui->ActiveId, 0u);
+  (*map[""])["focus_request"_key] = int32_t{1};
+  frame();
+  frame();
+  EXPECT_NE(GImGui->ActiveId, 0u) << "the text field is being edited";
+}
+
+TEST_F(ImguiRendererTest, WrapLayoutWrapsChildrenToTheAvailableWidth) {
+  std::string json = R"({"type":"WrapLayout","spacing":8,"children":{)";
+  for (int i = 0; i < 10; ++i)
+    json += std::string(i ? "," : "") + "\"b" + std::to_string(i) + "\":{\"type\":\"Button\",\"label\":\"b" +
+        std::to_string(i) + "\",\"width\":100,\"order\":" + std::to_string(i) + "}";
+  json += "}}";
+  auto map = bdg::wish::import_json(json);
+  labeled_rect_capturing_renderer r;
+  float avail = 0.0f;
+  for (int frame = 0; frame < 2; ++frame) {
+    r.begin_frame();
+    in_window([&] {
+      avail = ImGui::GetContentRegionAvail().x;
+      r.render_node(*map[""], *sess_);
+    });
+    r.end_frame();
+  }
+  const int per_line = static_cast<int>((avail + 8.0f) / 108.0f);
+  ASSERT_GT(per_line, 1);
+  ASSERT_LT(per_line, 10);
+  auto y = [&](int i) { return r.by_label["b" + std::to_string(i)].first.y; };
+  for (int i = 1; i < per_line; ++i)
+    EXPECT_FLOAT_EQ(y(i), y(0)) << i;
+  EXPECT_GT(y(per_line), y(0)) << "wrapped onto a second line";
+  EXPECT_FLOAT_EQ(r.by_label["b" + std::to_string(per_line)].first.x, r.by_label["b0"].first.x);
+}
+
+TEST_F(ImguiRendererTest, WrapLayoutPlacesLayoutTilesSideBySide) {
+  auto map = bdg::wish::import_json(R"({"type":"WrapLayout","spacing":8,"children":{
+      "t0":{"type":"VerticalLayout","width":76,"order":0,"children":{
+        "b":{"type":"Button","label":"a0","width":64,"height":64,"order":0},
+        "c":{"type":"Button","label":"cap0","order":1}}},
+      "t1":{"type":"VerticalLayout","width":76,"order":1,"children":{
+        "b":{"type":"Button","label":"a1","width":64,"height":64,"order":0},
+        "c":{"type":"Button","label":"cap1","order":1}}}}})");
+  labeled_rect_capturing_renderer r;
+  for (int frame = 0; frame < 3; ++frame) {
+    r.by_label.clear();
+    r.begin_frame();
+    in_window([&] { r.render_node(*map[""], *sess_); });
+    r.end_frame();
+  }
+  ASSERT_EQ(r.by_label.count("a1"), 1u);
+  EXPECT_FLOAT_EQ(r.by_label["a1"].first.y, r.by_label["a0"].first.y) << "same line";
+  EXPECT_GE(r.by_label["a1"].first.x, r.by_label["a0"].first.x + 76.0f) << "after the first tile";
+  EXPECT_GT(r.by_label["cap0"].first.y, r.by_label["a0"].first.y) << "caption below its thumbnail";
+}
+
+// ── ObjectInspector layout ───────────────────────────────────────────────────
+
+// An ObjectInspector renders as a vertical layout of [Table, Label]; it must
+// also measure as one, or a following sibling draws over its table's rows
+// (the measure used to fall back to its last item: about one row tall).
+TEST_F(ImguiRendererTest, ObjectInspectorTakesItsFullHeightInAVerticalLayout) {
+  auto map = bdg::wish::import_json(R"({"type":"VerticalLayout","children":{
+      "oi":{"type":"ObjectInspector","order":0,"children":{
+        "t":{"type":"Table","columns":2,"order":0,"children":{
+          "r0":{"type":"TableRow","order":0,"children":{"a":{"type":"Button","label":"r0"}}},
+          "r1":{"type":"TableRow","order":1,"children":{"a":{"type":"Button","label":"r1"}}},
+          "r2":{"type":"TableRow","order":2,"children":{"a":{"type":"Button","label":"r2"}}},
+          "r3":{"type":"TableRow","order":3,"children":{"a":{"type":"Button","label":"r3"}}}}},
+        "d":{"type":"Label","text":"description","order":1}}},
+      "after":{"type":"Button","label":"after","order":1}}})");
+  labeled_rect_capturing_renderer r;
+  for (int frame = 0; frame < 4; ++frame) {
+    r.by_label.clear();
+    r.begin_frame();
+    in_window([&] { r.render_node(*map[""], *sess_); });
+    r.end_frame();
+  }
+  ASSERT_EQ(r.by_label.count("r0"), 1u);
+  ASSERT_EQ(r.by_label.count("r3"), 1u);
+  ASSERT_EQ(r.by_label.count("after"), 1u);
+  EXPECT_GE(r.by_label["after"].first.y, r.by_label["r3"].second.y) << "the next sibling starts below the last row";
+  // What the enclosing layout budgets for it (its measured size) spans the
+  // whole table, not just its last item.
+  const float rows_span = r.by_label["r3"].second.y - r.by_label["r0"].first.y;
+  EXPECT_GE(map["oi"]->measured_size().y, rows_span);
 }
 
 // ── CollapsingHeader: server-authoritative "open" state ──────────────────────

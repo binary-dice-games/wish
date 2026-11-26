@@ -453,6 +453,20 @@ TEST_F(KeyboardScopeTest, AppScopeFiresFromAnyWindowOfTheSameApp) {
   EXPECT_EQ(take_events(), (std::vector<std::string>{"pressed", "pressed"}));
 }
 
+TEST_F(KeyboardScopeTest, AppScopeMenuItemShortcutFiresFromAnyWindowOfTheSameApp) {
+  left_ = bdg::wish::import_json(R"({"type":"Window","title":"Left","pos_x":0,"pos_y":0,
+      "width":300,"height":200,"children":{"bar":{"type":"MenuBar","children":{
+        "edit":{"type":"Menu","label":"Edit","children":{
+          "app":{"type":"MenuItem","label":"Undo","shortcut":"F8","shortcut_scope":"app"},
+          "win":{"type":"MenuItem","label":"Redo","shortcut":"F9"}}}}}}})");
+  frame2();
+  click_at(500, 100); // focus "Right"
+  take_events();
+  tap2(ImGuiKey_F8); // app scope: fires although "Left" owns the menu bar
+  tap2(ImGuiKey_F9); // window scope (default): does not
+  EXPECT_EQ(take_events(), std::vector<std::string>{"clicked"});
+}
+
 TEST_F(KeyboardScopeTest, AppScopeIgnoresOtherAppsWindows) {
   other_sess_ = std::make_unique<context>(bdg::bison::rmi::shared::generate_id());
   frame2();

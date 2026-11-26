@@ -375,6 +375,11 @@ static const measure_fn_map& measure_dispatch_fns() {
       {"Table"_key.id, measure_table},
       {"Treemap"_key.id, measure_treemap},
       {"VerticalLayout"_key.id, measure_vertical_layout},
+      // Renders through render_vertical_layout() (its [Table, Label]
+      // children stack vertically), so it must measure and arrange as one
+      // too: the last_rendered_size() fallback only captured its last item,
+      // about one row tall, so a following sibling drew over its table.
+      {"ObjectInspector"_key.id, measure_vertical_layout},
       {"HorizontalLayout"_key.id, measure_horizontal_layout},
       {"Splitter"_key.id, measure_splitter},
   };
@@ -651,6 +656,7 @@ static void arrange_table(imgui_renderer&, const ui_element&, ImVec2, ImVec2, co
 static const arrange_fn_map& arrange_dispatch_fns() {
   static const arrange_fn_map tbl{
       {"VerticalLayout"_key.id, arrange_vertical_layout},
+      {"ObjectInspector"_key.id, arrange_vertical_layout},
       {"HorizontalLayout"_key.id, arrange_horizontal_layout},
       {"Splitter"_key.id, arrange_splitter},
       {"Table"_key.id, arrange_table},

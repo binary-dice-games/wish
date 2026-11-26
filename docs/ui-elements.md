@@ -213,6 +213,22 @@ nest them freely to build rows, columns, and grids.
 
 Neither layout emits events.
 
+### `WrapLayout`
+
+Arranges children left to right and wraps them onto new lines to fit the
+available width -- a file browser's tile view. A child's cell width is its
+`width` field when positive, else its last rendered width. A
+`VerticalLayout` child is a **tile**: its own children stack in a plain
+group (no nested layout pass), so give it a `width`; the next cell starts a
+full cell width further even when a tile draws narrower. Inside another
+layout, give the `WrapLayout` itself `width: -1` so it gets the full width.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `spacing` | `float` | `-1` | Gap between cells on a line, in pixels; negative uses the theme's item spacing. |
+
+No events.
+
 ### `Spring`
 
 An expandable, invisible space that shares whatever room is left over in a
@@ -360,6 +376,8 @@ A clickable button.
 | `icon_color` | `string` | `""` | Optional `"#RRGGBBAA"`/`"#RRGGBB"` tint for `icon`; empty uses the theme's text color. |
 | `shortcut` | `string` | `""` | [Keyboard shortcut](#keyboard-navigation-access-keys-and-shortcuts) that clicks the button, e.g. `"Ctrl+S"`, `"F5"`; shown in the tooltip as `"<tooltip or label> (Ctrl+S)"`. |
 | `shortcut_scope` | `string` | `"window"` | `"app"` makes `shortcut` work from any window of the same app, not just the button's own. |
+| `checked` | `bool` | `false` | Draws the button in its pressed (active) color: a toggle button, e.g. the selected tool of a toolbar group. Display only; the owner sets it from `clicked`. |
+| `enabled` | `bool` | `true` | When `false` the button is grayed out, cannot be clicked and its `shortcut` is ignored. |
 
 **Events:** `clicked` — button pressed (by mouse, `Space`/`Enter`, access key or shortcut); no payload.
 
@@ -407,6 +425,7 @@ A single-line text field.
 | `label` | `string` | `""` | Input field label. |
 | `value` | `string` | `""` | Current text value. |
 | `hint` | `string` | `""` | Placeholder shown when empty. |
+| `focus_request` | `int32` | `0` | Change the value (e.g. increment it) to move keyboard focus into the field, e.g. for a Rename command. |
 | `max_length` | `int32` | `256` | Max characters (1–65536). |
 | `width` | `float` | `0.0` | Width in pixels; `0` = ImGui default, `-1` = fill remaining width. |
 | `flags` | `int32` (flags) | `0` | ImGuiInputTextFlags bitmask; e.g. `"EnterReturnsTrue"` (`64`) makes `changed` fire only on Enter instead of every keystroke. |
@@ -424,7 +443,7 @@ A color swatch that opens a picker popup when clicked.
 | `label` | `string` | `""` | Caption to the left of the swatch. |
 | `value` | `float[3\|4]` | `[1,1,1,1]` | Current color as `[r,g,b]` or `[r,g,b,a]` components in `[0,1]`. The component count (3 or 4) selects `ColorEdit3` vs. `ColorEdit4`. |
 | `flags` | `int32` (flags) | `0` | ImGuiColorEditFlags bitmask (e.g. `NoAlpha=2`, `NoInputs=32`, `PickerHueWheel=16777216`). |
-| `width` | `float` | `0.0` | Width in pixels; `0` = ImGui default, `-1` = fill remaining width. |
+| `width` | `float` | `0.0` | Width in pixels; `0` = ImGui default, `-1` = fill remaining width. With `NoInputs` (32) in `flags` and a non-zero width, the control is a swatch that wide (no numeric inputs) opening the picker on click -- a property inspector's color field. |
 
 **Events:** `changed` — `{ value: float[] }` (same component count as the
 current `value`).
@@ -457,6 +476,26 @@ Click-and-drag to change; double-click to type a value directly.
 | `format` | `string` | `"%.3f"` | (`DragFloat` only) printf display format. |
 
 **Events:** `changed` — `{ value: int32|float }`.
+
+`DragFloat` also takes `width` (`0` = ImGui default, `-1` = fill).
+
+#### `DragFloatN`
+A 2-4 component float vector editor: one drag field per component, each
+behind a colored axis tag (X red, Y green, Z blue, W gray), as in Godot and
+Unity property inspectors.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `label` | `string` | `""` | Optional caption right of the fields. |
+| `value` | `float[2..4]` | `[0,0]` | Current components; the count decides how many fields are shown. |
+| `speed` | `float` | `0.1` | Change per pixel dragged. |
+| `min` / `max` | `float` | `0` | Clamp; `min == max` is unclamped. |
+| `format` | `string` | `"%.2f"` | printf display format of every component. |
+| `axis_labels` | `string` | `"X\nY\nZ\nW"` | Newline-separated tag per component; an empty line draws none. |
+| `width` | `float` | `0.0` | Total width; `-1` fills the available width. |
+| `live` | `bool` | `false` | `true`: `changed` on every edit while dragging. `false`: once per committed edit (release, Enter, focus loss) -- one undo step per drag. |
+
+**Events:** `changed` — `{ value: float[] }`.
 
 #### `Combo`
 A drop-down selection list.
@@ -570,6 +609,7 @@ A selectable leaf inside a `Menu`.
 |---|---|---|---|
 | `label` | `string` | `""` | Item text; `"&New"` makes `N` activate it while its menu is open. |
 | `shortcut` | `string` | `""` | [Keyboard shortcut](#keyboard-navigation-access-keys-and-shortcuts), shown on the right and active while the menu is closed: pressing it emits `clicked` (while the window owning the `MenuBar`/`MenuButton` has focus). Not fired when the item or its `Menu` is disabled. |
+| `shortcut_scope` | `string` | `"window"` | `"app"`: `shortcut` fires while any window of the same app has focus (an editor's main menu whose Ctrl+Z must work from every docked panel), not only the window owning the `MenuBar`/`MenuButton`. |
 | `checked` | `bool` | `false` | Shows a check mark. Purely display -- the renderer never modifies it; the form sets it explicitly (e.g. a radio-style submenu recomputing it from server state). |
 | `enabled` | `bool` | `true` | When `false`, grayed out and cannot be clicked. |
 | `copy_text` | `string` | `""` | When non-empty, clicking the item also copies this text to the OS clipboard (`ImGui::SetClipboardText`, on the render thread) -- a "Copy ..." action with no client round trip. |
@@ -727,10 +767,17 @@ A collapsible node with an expand arrow.
 | `selected` | `bool` | `false` | Draws the node highlighted. Application-owned (set it from a `clicked` handler); a node that becomes selected is scrolled into view. |
 | `icon` | `string` | `""` | Image drawn between the arrow and the label, at text height and tinted to the text color (e.g. `"res/icons/folder.png"`). Sandboxed like `Image.src`: relative to the session resource directory. |
 | `open_on_arrow` | `bool` | `false` | Only the arrow (or a double click) toggles the node, so a click on the label just emits `clicked`; the node also spans the available width. Use it for trees whose nodes are selectable (e.g. a folder tree). |
+| `double_click_toggles` | `bool` | `true` | With `open_on_arrow`, whether a double click on the label also toggles the node. Set `false` when a double click means something else (it always emits `activated`), e.g. a scene tree whose double click frames the object. |
 
 **Events:**
 - `toggled` — `{ open: bool }`, when the user expands or collapses the node.
-- `clicked` — the node was clicked without toggling it; no payload.
+- `clicked` — `{ ctrl: bool, shift: bool }`, the node was clicked without toggling it (modifiers captured at click time, as for `Table.row_selected`, so the owner can implement multi-selection).
+- `activated` — `{ ctrl: bool, shift: bool }`, a double click on the node. At most one of `clicked`/`activated` fires per frame.
+
+`drag_type`/`drag_payload`/`drop_type` and `tooltip` attach to the node's own
+row (not to its icon, label or children), and a `ContextMenu` child opens on
+a right click of the row instead of rendering as a child -- so a tree can
+offer drag-and-drop reparenting and per-node menus.
 
 To fill a large tree lazily, create a node without children and add them in
 its `toggled` handler (set `leaf` once a node turns out to have none).
@@ -741,9 +788,14 @@ A bold section header toggling visibility of its children.
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `label` | `string` | `""` | Header text. |
+| `icon` | `string` | `""` | Image drawn between the arrow and the label, tinted to the text color. Sandboxed like `Image.src`. |
+| `menu_button` | `bool` | `false` | With a `ContextMenu` child: a small "more" button at the right end of the header also opens that menu (a property inspector's per-component menu). |
 | `open` | `bool` | `true` | Expanded/collapsed state. **Server-authoritative:** forced into ImGui every frame (`ImGuiCond_Always`), unlike `TreeNode.open`. Update this field in the `toggled` handler to keep the header responsive to clicks; leaving it stale pins the header regardless of user input. Rebuilding the header's subtree every frame is safe as long as `open` stays consistent. |
 
 **Events:** `toggled` — `{ open: bool }`.
+
+A `ContextMenu` child opens on a right click of the header and is never
+drawn as content.
 
 ### Tables
 
@@ -915,7 +967,10 @@ root (its ancestors' labels joined by `/`) and its `details` line.
 
 #### `DockSpaceViewport`
 Full-viewport dockspace host; `Window` children nested under it become
-independently dockable panels. A child `Window` with no explicit `pos_x`/
+independently dockable panels. Every other child except a `DockLayout`
+(the `MenuBar`, a toolbar `HorizontalLayout`, `Shortcut`s) renders as a
+**header strip** above the dockspace, which takes the remaining height -- a
+fixed toolbar between the menu bar and the docked panels. A child `Window` with no explicit `pos_x`/
 `pos_y` docks into this dockspace by default (see `Window.pos_x`); give it a
 position or the `NoDocking` flag to keep it floating. Emits `closed` when
 `closable` and its close button is clicked.

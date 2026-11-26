@@ -61,6 +61,23 @@ void register_button() {
                             "any window of the same app (session) has focus -- for a tool split into "
                             "several docked panels."),
           attr<Category>("Behavior")});
+  proto->addField(
+      "checked"_rkey,
+      field{
+          false,
+          attr<DisplayName>("Checked"),
+          attr<Description>("Draws the button in its pressed (active) color -- a toggle button, "
+                            "e.g. the selected tool of a toolbar group. Purely display: the "
+                            "renderer never changes it; the owner sets it from 'clicked'."),
+          attr<Category>("Appearance")});
+  proto->addField(
+      "enabled"_rkey,
+      field{
+          true,
+          attr<DisplayName>("Enabled"),
+          attr<Description>("When false the button is grayed out and cannot be clicked (its "
+                            "shortcut is ignored too)."),
+          attr<Category>("Behavior")});
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Button"));
   (*proto)[dynamic::CLASS].addAttribute(attr<Description>("A clickable button that emits a clicked event."));
   dynamic::addClass(

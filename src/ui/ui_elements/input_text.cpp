@@ -101,6 +101,14 @@ void register_input_text() {
           attr<Description>("Box height in pixels when multiline is true; 0 "
                             "uses ImGui's default (a few lines)."),
           attr<Category>("Layout")});
+  proto->addField(
+      "focus_request"_rkey,
+      field{
+          int32_t{0},
+          attr<DisplayName>("Focus Request"),
+          attr<Description>("Change the value (e.g. increment it) to move keyboard focus into the field, "
+                            "e.g. for a Rename command."),
+          attr<Category>("Behavior")});
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Input Text"));
   (*proto)[dynamic::CLASS].addAttribute(attr<Description>("A single-line text input field."));
   dynamic::addClass(

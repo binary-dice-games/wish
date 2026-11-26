@@ -94,6 +94,16 @@ namespace bdg::wish {
  * informational view. `show_description_panel` (default `true`) omits the
  * description `Label` below the field table entirely when `false`.
  */
+/**
+ * @brief Field attribute: a `float` angle stored in radians that
+ *        `object_inspector` shows and edits in degrees (a `DragFloat` with a
+ *        degree sign); edits are converted back to radians.
+ */
+class Angle : public bison::attribute {
+ public:
+  Angle() = default;
+};
+
 class object_inspector : public cloneable_ui_element<object_inspector> {
  public:
   explicit object_inspector(bison::dynamic&& base);

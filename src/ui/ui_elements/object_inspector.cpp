@@ -30,6 +30,8 @@ key_t wish_id_of(const Element& element) {
 ///        until first read, see `dynamic::findField()`'s doc comment).
 ///        Generalized over @p ns (not hardcoded to any one namespace),
 ///        unlike a per-app helper of the same shape.
+constexpr float kDegreesPerRadian = 57.29577951308232f;
+
 dynamic_ptr find_class_prototype(key_t ns, key_t klass) {
   auto lp = dynamic::getRegistry().rlock();
   auto ns_it = lp->find(ns);
@@ -194,22 +196,32 @@ void object_inspector::set_target(context& s, dynamic_ptr target) {
   auto table = stamp(s, "Table"_key, base_path_ + ".table");
   table["columns"_key] = int32_t{2};
   table["headers"_key] = false;
-  // ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit -- a mixed
-  // fixed-width/stretch column layout (Field fixed, Value stretch) needs
-  // an explicit sizing policy on the table, or ImGui's TableSetupColumn()
-  // asserts the moment a column supplies a non-zero init_width (see
-  // imgui_tables.cpp's TableSetupColumnApply()). Matches the flag
-  // combination file_dialog.cpp's file_table already uses.
-  table["flags"_key] = int32_t{64 | 8192};
-  table_id_ = wish_id_of(table);
-
+  auto* label_ratio_f = findField<float>("label_ratio"_key);
+  const float label_ratio = label_ratio_f ? std::clamp(*label_ratio_f, 0.0f, 0.9f) : 0.0f;
   auto col_field = stamp(s, "TableColumn"_key, base_path_ + ".table.col_field");
   col_field["label"_key] = std::string{"Field"};
-  col_field["flags"_key] = int32_t{16}; // ImGuiTableColumnFlags_WidthFixed
-  col_field["init_width"_key] = 140.0f;
   auto col_value = stamp(s, "TableColumn"_key, base_path_ + ".table.col_value");
   col_value["label"_key] = std::string{"Value"};
   col_value["flags"_key] = int32_t{8}; // ImGuiTableColumnFlags_WidthStretch
+  if (label_ratio > 0.0f) {
+    // Both columns stretch in proportion (label_ratio : 1 - label_ratio),
+    // user-resizable: ImGuiTableFlags_RowBg | Resizable | SizingStretchProp.
+    table["flags"_key] = int32_t{64 | 1 | (3 << 13)};
+    col_field["flags"_key] = int32_t{8};
+    col_field["init_width"_key] = label_ratio;
+    col_value["init_width"_key] = 1.0f - label_ratio;
+  } else {
+    // ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit -- a mixed
+    // fixed-width/stretch column layout (Field fixed, Value stretch) needs
+    // an explicit sizing policy on the table, or ImGui's TableSetupColumn()
+    // asserts the moment a column supplies a non-zero init_width (see
+    // imgui_tables.cpp's TableSetupColumnApply()). Matches the flag
+    // combination file_dialog.cpp's file_table already uses.
+    table["flags"_key] = int32_t{64 | 8192};
+    col_field["flags"_key] = int32_t{16}; // ImGuiTableColumnFlags_WidthFixed
+    col_field["init_width"_key] = 140.0f;
+  }
+  table_id_ = wish_id_of(table);
 
   auto table_children = dynamic_ptr{key_t{0U}, {}};
   size_t idx = 0;
@@ -234,6 +246,10 @@ void object_inspector::set_target(context& s, dynamic_ptr target) {
 
       auto name_label = stamp(s, "Label"_key, row_path + ".name");
       name_label["text"_key] = display_name;
+      // The field's description is always a hover tooltip on its name (the
+      // Godot/Unity convention), with or without the description panel.
+      if (const auto* d = rf.proto_field->findAttribute<Description>(); d && !d->text().empty())
+        name_label["tooltip"_key] = d->text();
 
       wish::ui_element_ptr value_widget;
       bool editable = true;
@@ -294,7 +310,14 @@ void object_inspector::set_target(context& s, dynamic_ptr target) {
           value_widget["width"_key] = -1.0f;
         }
       } else if (proto_field.is<float>()) {
-        if (const auto* r = proto_field.findAttribute<Range>()) {
+        if (proto_field.findAttribute<Angle>()) {
+          value_widget = stamp(s, "DragFloat"_key, row_path + ".value");
+          value_widget["label"_key] = std::string{};
+          value_widget["value"_key] = live.as<float>() * kDegreesPerRadian;
+          value_widget["speed"_key] = 0.5f;
+          value_widget["format"_key] = std::string{"%.1f\xC2\xB0"}; // degree sign (UTF-8)
+          value_widget["width"_key] = -1.0f;
+        } else if (const auto* r = proto_field.findAttribute<Range>()) {
           value_widget = stamp(s, "SliderFloat"_key, row_path + ".value");
           value_widget["label"_key] = std::string{};
           value_widget["value"_key] = live.as<float>();
@@ -317,10 +340,19 @@ void object_inspector::set_target(context& s, dynamic_ptr target) {
           value_widget["height"_key] = static_cast<float>(m->lines()) * 18.0f;
         }
       } else if (proto_field.is<std::vector<float>>()) {
+        const auto current = live.get_as<std::vector<float>>();
         if (proto_field.findAttribute<ColorField>()) {
+          // A full-width swatch opening the picker (no numeric inputs), as
+          // in Godot/Unity: ImGuiColorEditFlags_NoInputs | AlphaPreviewHalf.
           value_widget = stamp(s, "ColorEdit"_key, row_path + ".value");
           value_widget["label"_key] = std::string{};
-          value_widget["value"_key] = live.get_as<std::vector<float>>();
+          value_widget["value"_key] = current;
+          value_widget["flags"_key] = int32_t{32 | (1 << 18)};
+          value_widget["width"_key] = -1.0f;
+        } else if (current.size() >= 2 && current.size() <= 4) {
+          value_widget = stamp(s, "DragFloatN"_key, row_path + ".value");
+          value_widget["label"_key] = std::string{};
+          value_widget["value"_key] = current;
           value_widget["width"_key] = -1.0f;
         } else {
           value_widget = stamp(s, "InputText"_key, row_path + ".value");
@@ -422,12 +454,14 @@ std::optional<object_inspector::field_edit> object_inspector::handle_changed(
   } else if (current.is<int32_t>()) {
     new_value[field_name] = payload.as<int32_t>("value"_key);
   } else if (current.is<float>()) {
-    new_value[field_name] = payload.as<float>("value"_key);
+    float v = payload.as<float>("value"_key);
+    new_value[field_name] = current.findAttribute<Angle>() ? v / kDegreesPerRadian : v;
   } else if (current.is<std::string>()) {
     new_value[field_name] = payload.as<std::string>("value"_key);
   } else if (current.is<std::vector<float>>()) {
-    if (current.findAttribute<ColorField>())
-      new_value[field_name] = payload.as<std::vector<float>>("value"_key);
+    const auto* v = payload.findField("value"_key);
+    if (v && v->is<std::vector<float>>()) // ColorEdit, DragFloatN
+      new_value[field_name] = v->as<std::vector<float>>();
     else
       new_value[field_name] =
           text_to_floats(payload.as<std::string>("value"_key), current.get_as<std::vector<float>>().size());
@@ -483,6 +517,16 @@ void register_object_inspector() {
                             "fields are never drop targets even if DropTarget-attributed."),
           attr<Category>("Behavior")});
 
+  proto->addField(
+      "label_ratio"_key,
+      field{
+          0.0f,
+          attr<DisplayName>("Label Ratio"),
+          attr<Description>("0 (default): the name column is a fixed 140 px. Between 0 and 0.9: both "
+                            "columns stretch, the name column taking this fraction of the width, and "
+                            "the user can resize them (Godot/Unity-style inspector). Read by "
+                            "set_target()."),
+          attr<Category>("Appearance")});
   proto->addField(
       "show_description_panel"_key,
       field{

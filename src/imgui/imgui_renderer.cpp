@@ -100,6 +100,8 @@ static const render_fn_map& built_in_render_fns() {
       {"InputInt"_key.id, render_input_int},
       {"InputFloat"_key.id, render_input_float},
       {"DragFloat"_key.id, render_drag_float},
+      {"DragFloatN"_key.id, render_drag_float_n},
+      {"WrapLayout"_key.id, render_wrap_layout},
       {"DragInt"_key.id, render_drag_int},
       // Status
       {"ProgressBar"_key.id, render_progress_bar},
@@ -558,8 +560,10 @@ void imgui_renderer::render_node(const ui_element& node, const context& s) {
   // render_vertical_layout()'s wrap_self guard) -- report_self_rect() then
   // never ran, so the "defensive fallback" branch below (GetItemRectMin/Max)
   // is what actually captures the rect in that rare case, not a bug.
-  bool self_reports_rect =
-      cls == "Window"_key || cls == "DockSpaceViewport"_key || cls == "VerticalLayout"_key || cls == "HorizontalLayout"_key;
+  // ObjectInspector renders through render_vertical_layout() (see the
+  // render_fn table), so it reports its own rect the same way.
+  bool self_reports_rect = cls == "Window"_key || cls == "DockSpaceViewport"_key || cls == "VerticalLayout"_key ||
+      cls == "HorizontalLayout"_key || cls == "ObjectInspector"_key;
 
   // Only classes whose render function actually recurses into ui_element
   // children need a group wrap to report their own bounding box -- every
@@ -769,11 +773,15 @@ void imgui_renderer::render_node(const ui_element& node, const context& s) {
 
   // Attaches to whatever ImGui item the dispatch call above drew last -- see
   // handle_drag_drop()'s own doc comment.
-  handle_drag_drop(node, s);
+  // TreeNode handles both itself, on its own row item (render_tree_node()).
+  const bool self_hosts_item_hooks = node.class_key() == "TreeNode"_key;
+  if (!self_hosts_item_hooks)
+    handle_drag_drop(node, s);
 
   // Generic per-element tooltip: attaches to the same last-drawn item as
   // handle_drag_drop() above, so it shares the "leaf element only" caveat.
-  handle_tooltip(node);
+  if (!self_hosts_item_hooks)
+    handle_tooltip(node);
 
   // "__wish_highlight__" is an ad-hoc field (like "__wish_id"/"__path__"
   // elsewhere) set by the editor module to box whichever preview widget
