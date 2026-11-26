@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Dragging an `Image` or `Label` with `drag_type` set no longer asserts in ImGui.
 - An `ObjectInspector` inside a layout was measured as its last row only, so the next sibling drew over its table.
 
 ### Added

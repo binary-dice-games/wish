@@ -391,7 +391,10 @@ bool imgui_renderer::wants_continuous_redraw() const {
 
 void handle_drag_drop(const ui_element& node, const context& s) {
   const std::string& drag_type = node.drag_type_ref();
-  if (!drag_type.empty() && ImGui::BeginDragDropSource()) {
+  // SourceAllowNullID: Image/Label items have no ImGui ID, and ImGui asserts
+  // on a drag source over one without it.
+  if (!drag_type.empty() &&
+      ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
     const std::string& drag_payload = node.drag_payload_ref();
     ImGui::SetDragDropPayload(drag_type.c_str(), drag_payload.data(), drag_payload.size());
     ImGui::TextUnformatted(drag_payload.c_str());
