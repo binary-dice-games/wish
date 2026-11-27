@@ -407,6 +407,12 @@ void handle_drag_drop(const ui_element& node, const context& s) {
       payload["type"_key] = drop_type;
       payload["payload"_key] =
           std::string(static_cast<const char*>(accepted->Data), static_cast<size_t>(accepted->DataSize));
+    // Where in the target item the drop landed (0 = top edge, 1 = bottom
+    // edge), so receivers can tell "before"/"onto"/"after" apart.
+    const ImVec2 item_min = ImGui::GetItemRectMin();
+    const ImVec2 item_max = ImGui::GetItemRectMax();
+    const float item_h = item_max.y - item_min.y;
+    payload["rel_y"_key] = item_h > 0.0f ? (ImGui::GetMousePos().y - item_min.y) / item_h : 0.5f;
       enqueue_event(s, node.wish_id(), "dropped"_key, std::move(payload));
     }
     ImGui::EndDragDropTarget();
