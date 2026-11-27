@@ -402,18 +402,40 @@ void handle_drag_drop(const ui_element& node, const context& s) {
   }
   const std::string& drop_type = node.drop_type_ref();
   if (!drop_type.empty() && ImGui::BeginDragDropTarget()) {
-    if (const ImGuiPayload* accepted = ImGui::AcceptDragDropPayload(drop_type.c_str())) {
-      dynamic payload;
-      payload["type"_key] = drop_type;
-      payload["payload"_key] =
-          std::string(static_cast<const char*>(accepted->Data), static_cast<size_t>(accepted->DataSize));
-    // Where in the target item the drop landed (0 = top edge, 1 = bottom
-    // edge), so receivers can tell "before"/"onto"/"after" apart.
-    const ImVec2 item_min = ImGui::GetItemRectMin();
-    const ImVec2 item_max = ImGui::GetItemRectMax();
-    const float item_h = item_max.y - item_min.y;
-    payload["rel_y"_key] = item_h > 0.0f ? (ImGui::GetMousePos().y - item_min.y) / item_h : 0.5f;
-      enqueue_event(s, node.wish_id(), "dropped"_key, std::move(payload));
+    // "drop_zones": the target distinguishes "before"/"onto"/"after" by where in
+    // the item the drop lands (top/bottom quarter = an insertion line at that
+    // edge, middle = a box around the item), so show which one is about to
+    // happen while hovering. Without it ImGui's default highlight box is used.
+    const bool zones = node.get_as<bool>("drop_zones"_key, false);
+    ImGuiDragDropFlags flags = ImGuiDragDropFlags_AcceptBeforeDelivery;
+    if (zones)
+      flags |= ImGuiDragDropFlags_AcceptNoDrawDefaultRect;
+    if (const ImGuiPayload* accepted = ImGui::AcceptDragDropPayload(drop_type.c_str(), flags)) {
+      // Where in the target item the pointer is (0 = top edge, 1 = bottom
+      // edge), so receivers can tell "before"/"onto"/"after" apart.
+      const ImVec2 item_min = ImGui::GetItemRectMin();
+      const ImVec2 item_max = ImGui::GetItemRectMax();
+      const float item_h = item_max.y - item_min.y;
+      const float rel_y = item_h > 0.0f ? (ImGui::GetMousePos().y - item_min.y) / item_h : 0.5f;
+      if (zones && !accepted->IsDelivery()) {
+        const ImU32 col = ImGui::GetColorU32(ImGuiCol_DragDropTarget);
+        ImDrawList* dl = ImGui::GetForegroundDrawList();
+        if (rel_y < 0.25f || rel_y > 0.75f) {
+          const float y = rel_y < 0.25f ? item_min.y : item_max.y;
+          dl->AddLine(ImVec2(item_min.x, y), ImVec2(item_max.x, y), col, 2.0f);
+          dl->AddCircleFilled(ImVec2(item_min.x, y), 3.0f, col);
+        } else {
+          dl->AddRect(item_min, item_max, col, 2.0f, 0, 2.0f);
+        }
+      }
+      if (accepted->IsDelivery()) {
+        dynamic payload;
+        payload["type"_key] = drop_type;
+        payload["payload"_key] =
+            std::string(static_cast<const char*>(accepted->Data), static_cast<size_t>(accepted->DataSize));
+        payload["rel_y"_key] = rel_y;
+        enqueue_event(s, node.wish_id(), "dropped"_key, std::move(payload));
+      }
     }
     ImGui::EndDragDropTarget();
   }
