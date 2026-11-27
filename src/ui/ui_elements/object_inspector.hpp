@@ -17,6 +17,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace bdg::wish {
@@ -236,6 +237,9 @@ class object_inspector : public cloneable_ui_element<object_inspector> {
   wish::ui_element_ptr description_label_;
   std::vector<bison::key_t> row_field_order_; ///< Table row index -> field key.
   std::unordered_map<bison::key_t, bison::key_t, bison::key_t, bison::key_t> value_widgets_;
+  /// Float widgets showing an `Angle` field in degrees (read from the prototype's
+  /// attributes at build time: an instance's own field may not carry them).
+  std::unordered_set<bison::key_t, bison::key_t, bison::key_t> angle_widgets_;
   std::unordered_map<bison::key_t, bison::key_t, bison::key_t, bison::key_t> drop_widgets_;
 };
 

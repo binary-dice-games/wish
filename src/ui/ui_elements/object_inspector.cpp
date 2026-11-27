@@ -164,6 +164,7 @@ void object_inspector::release(context& s) {
   description_label_.reset();
   row_field_order_.clear();
   value_widgets_.clear();
+  angle_widgets_.clear();
   drop_widgets_.clear();
 }
 
@@ -310,26 +311,31 @@ void object_inspector::set_target(context& s, dynamic_ptr target) {
           value_widget["width"_key] = -1.0f;
         }
       } else if (proto_field.is<float>()) {
-        if (proto_field.findAttribute<Angle>()) {
-          value_widget = stamp(s, "DragFloat"_key, row_path + ".value");
-          value_widget["label"_key] = std::string{};
-          value_widget["value"_key] = live.as<float>() * kDegreesPerRadian;
-          value_widget["speed"_key] = 0.5f;
-          value_widget["format"_key] = std::string{"%.1f\xC2\xB0"}; // degree sign (UTF-8)
-          value_widget["width"_key] = -1.0f;
-        } else if (const auto* r = proto_field.findAttribute<Range>()) {
-          value_widget = stamp(s, "SliderFloat"_key, row_path + ".value");
-          value_widget["label"_key] = std::string{};
-          value_widget["value"_key] = live.as<float>();
-          value_widget["min"_key] = static_cast<float>(r->min());
-          value_widget["max"_key] = static_cast<float>(r->max());
-          value_widget["width"_key] = -1.0f;
-        } else {
-          value_widget = stamp(s, "InputFloat"_key, row_path + ".value");
-          value_widget["label"_key] = std::string{};
-          value_widget["value"_key] = live.as<float>();
-          value_widget["width"_key] = -1.0f;
+        // Every float is a drag widget; the field's reflection attributes pick
+        // the clamp (Range) and the drag step (Step). An Angle field is shown
+        // in degrees (stored in radians).
+        const bool angle = proto_field.findAttribute<Angle>() != nullptr;
+        const auto* range = proto_field.findAttribute<Range>();
+        const auto* step = proto_field.findAttribute<Step>();
+        const float scale = angle ? kDegreesPerRadian : 1.0f;
+        value_widget = stamp(s, "DragFloat"_key, row_path + ".value");
+        value_widget["label"_key] = std::string{};
+        value_widget["value"_key] = live.as<float>() * scale;
+        if (range) {
+          value_widget["min"_key] = static_cast<float>(range->min()) * scale;
+          value_widget["max"_key] = static_cast<float>(range->max()) * scale;
         }
+        // Default step: 0.5 degrees, else 1/200 of the range, else 0.1.
+        float speed = angle ? 0.5f : 0.1f;
+        if (step)
+          speed = static_cast<float>(step->step()) * scale;
+        else if (range && !angle && range->max() > range->min())
+          speed = static_cast<float>((range->max() - range->min()) / 200.0);
+        value_widget["speed"_key] = speed;
+        value_widget["format"_key] = angle ? std::string{"%.1f\xC2\xB0"} : std::string{"%.3f"};
+        value_widget["width"_key] = -1.0f;
+        if (angle)
+          angle_widgets_.insert(wish_id_of(value_widget));
       } else if (proto_field.is<std::string>()) {
         value_widget = stamp(s, "InputText"_key, row_path + ".value");
         value_widget["label"_key] = std::string{};
@@ -455,7 +461,7 @@ std::optional<object_inspector::field_edit> object_inspector::handle_changed(
     new_value[field_name] = payload.as<int32_t>("value"_key);
   } else if (current.is<float>()) {
     float v = payload.as<float>("value"_key);
-    new_value[field_name] = current.findAttribute<Angle>() ? v / kDegreesPerRadian : v;
+    new_value[field_name] = angle_widgets_.count(widget_id) ? v / kDegreesPerRadian : v;
   } else if (current.is<std::string>()) {
     new_value[field_name] = payload.as<std::string>("value"_key);
   } else if (current.is<std::vector<float>>()) {
