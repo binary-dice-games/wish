@@ -111,6 +111,13 @@ class server : public bison::rmi::server {
     external_render_loop_ = external;
   }
 
+  /// @brief Caps the render rate (default 60 fps). A frame is never drawn
+  ///        sooner than 1/@p fps after the previous one. Values < 1 are
+  ///        clamped to 1. May be called at any time.
+  void set_max_fps(int fps) noexcept {
+    min_frame_interval_ms_.store(1000 / (fps < 1 ? 1 : fps), std::memory_order_relaxed);
+  }
+
   /// @brief See set_external_render_loop().
   bool external_render_loop() const noexcept {
     return external_render_loop_;
@@ -383,6 +390,7 @@ class server : public bison::rmi::server {
   // of low-level input (e.g. high-poll-rate mouse motion) can't drive the
   // frame rate arbitrarily high.
   std::chrono::steady_clock::time_point last_render_time_{};
+  std::atomic<int> min_frame_interval_ms_{16}; // see set_max_fps()
   // Render-thread-only latch: set when input activity is observed but the
   // frame-rate cap defers the actual render, so the deferred frame isn't
   // lost if no further input arrives before the cap allows rendering again.

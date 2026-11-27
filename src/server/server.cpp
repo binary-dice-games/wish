@@ -376,7 +376,8 @@ void server::render_iteration() {
       // sleep_for ticks) can't drive full-tree ImGui rebuilds far above the
       // rate a display could even show. Sessions/input remain marked dirty,
       // so the deferred frame still happens as soon as the interval elapses.
-      static constexpr std::chrono::milliseconds kMinFrameInterval{16}; // ~60 FPS
+      const std::chrono::milliseconds kMinFrameInterval{
+          min_frame_interval_ms_.load(std::memory_order_relaxed)}; // set_max_fps()
       if (needs_render && std::chrono::steady_clock::now() - last_render_time_ < kMinFrameInterval)
         needs_render = false; // pending_render_ stays set; retried next tick
 

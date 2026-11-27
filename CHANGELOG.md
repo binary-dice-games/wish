@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `server::set_max_fps()` sets the render rate cap (default 60 fps).
+
 ### Fixed
 
 - Dragging an `Image` or `Label` with `drag_type` set no longer asserts in ImGui.
