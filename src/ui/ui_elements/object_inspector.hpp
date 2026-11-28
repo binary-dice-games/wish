@@ -14,10 +14,12 @@
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/server/context.hpp"
 
+#include <functional>
 #include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace bdg::wish {
@@ -216,6 +218,43 @@ class object_inspector : public cloneable_ui_element<object_inspector> {
   ///        drop-target widgets, else `std::nullopt`.
   std::optional<field_drop> handle_dropped(bison::key_t widget_id, const bison::dynamic& payload) const;
 
+  /// @brief How the owning app wants one field's row decorated (e.g. a
+  ///        prefab override marker with Revert/Apply menu entries).
+  struct field_decoration {
+    /// `"#RRGGBB[AA]"` text color for the field-name label; empty keeps
+    /// the default.
+    std::string name_color;
+    /// Appended (on a new line) to the name label's tooltip; empty = none.
+    std::string tooltip_note;
+    /// Row context-menu entries as (action id, menu label), in order.
+    /// Empty = no menu on this row.
+    std::vector<std::pair<std::string, std::string>> menu;
+  };
+
+  /// @brief Called once per field row by `set_target()`.
+  using field_decorator = std::function<field_decoration(bison::key_t field_key)>;
+
+  /**
+   * @brief Install (or, with null, remove) the per-field decorator.
+   *
+   * Takes effect on the next `set_target()`; rows already built are not
+   * changed. Without a decorator the built tree is exactly as before.
+   */
+  void set_field_decorator(field_decorator fn) {
+    decorator_ = std::move(fn);
+  }
+
+  /// @brief A row context-menu item resolved by `handle_menu_clicked()`.
+  struct field_menu_action {
+    bison::key_t field_name;
+    std::string action; ///< the action id the decorator gave
+  };
+
+  /// @brief Returns the field and action if @p widget_id is one of this
+  ///        instance's row-menu items (a `"clicked"` event), else
+  ///        `std::nullopt`.
+  std::optional<field_menu_action> handle_menu_clicked(bison::key_t widget_id) const;
+
  private:
   /// @throws std::logic_error if called outside RMI dispatch. Mirrors
   ///         `form::sess()`/`ui_template::sess()` -- only used by this
@@ -241,6 +280,9 @@ class object_inspector : public cloneable_ui_element<object_inspector> {
   /// attributes at build time: an instance's own field may not carry them).
   std::unordered_set<bison::key_t, bison::key_t, bison::key_t> angle_widgets_;
   std::unordered_map<bison::key_t, bison::key_t, bison::key_t, bison::key_t> drop_widgets_;
+  field_decorator decorator_;
+  /// Row-menu item widget -> (field, action id).
+  std::unordered_map<bison::key_t, field_menu_action, bison::key_t, bison::key_t> menu_widgets_;
 };
 
 /**
