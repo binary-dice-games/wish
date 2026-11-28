@@ -526,3 +526,100 @@ TEST_F(ObjectInspectorTest, SetTargetMethodRebuildsRows) {
   }
   EXPECT_EQ(row_count_after, 14);
 }
+
+// ── Per-field decorator (set_field_decorator / handle_menu_clicked) ──────────
+
+namespace {
+
+/// The name-cell Label of the row whose name reads @p display_name.
+wish::ui_element_ptr find_name_label(wish::context& s, const std::string& display_name) {
+  for (auto& [path, elem] : s.ui_objects)
+    if (path.size() >= 5 && path.substr(path.size() - 5) == ".name" &&
+        elem->get_as<std::string>("text"_key, std::string{}) == display_name)
+      return elem;
+  return {};
+}
+
+/// Path of the row whose name reads @p display_name ("" if none).
+std::string find_row_path(wish::context& s, const std::string& display_name) {
+  for (auto& [path, elem] : s.ui_objects)
+    if (path.size() >= 5 && path.substr(path.size() - 5) == ".name" &&
+        elem->get_as<std::string>("text"_key, std::string{}) == display_name)
+      return path.substr(0, path.size() - 5);
+  return {};
+}
+
+} // namespace
+
+TEST_F(ObjectInspectorDispatchTest, DecoratorColorsNameAddsTooltipNoteAndRowMenu) {
+  auto* oi = find_inspector();
+  ASSERT_NE(oi, nullptr);
+  oi->set_field_decorator([](bison::key_t field) {
+    wish::object_inspector::field_decoration d;
+    if (field == "active"_key) {
+      d.name_color = "#4FA3FF";
+      d.tooltip_note = "Overridden";
+      d.menu = {{"revert", "Revert"}, {"apply", "Apply to Prefab"}};
+    }
+    return d;
+  });
+  auto& s = *srv_->last_session;
+  oi->set_target(s, target_);
+
+  auto active = find_name_label(s, "Active");
+  ASSERT_TRUE(active);
+  EXPECT_EQ(active->get_as<std::string>("text_color"_key, std::string{}), "#4FA3FF");
+  EXPECT_EQ(active->get_as<std::string>("tooltip"_key, std::string{}), "On/off.\nOverridden")
+      << "the note is appended to the field's own description";
+
+  const std::string row = find_row_path(s, "Active");
+  ASSERT_FALSE(row.empty());
+  auto menu = s.ui_objects.find(row + ".menu");
+  ASSERT_NE(menu, s.ui_objects.end());
+  EXPECT_EQ(menu->second->as<bison::key_t>(dynamic::CLASS), "ContextMenu"_key);
+  auto apply = s.ui_objects.find(row + ".menu.i1");
+  ASSERT_NE(apply, s.ui_objects.end());
+  EXPECT_EQ(apply->second->get_as<std::string>("label"_key, std::string{}), "Apply to Prefab");
+
+  auto action = oi->handle_menu_clicked(apply->second->as<bison::key_t>("__wish_id"_key));
+  ASSERT_TRUE(action.has_value());
+  EXPECT_EQ(action->field_name, "active"_key);
+  EXPECT_EQ(action->action, "apply");
+
+  // Undecorated rows are untouched.
+  auto score = find_name_label(s, "Score");
+  ASSERT_TRUE(score);
+  EXPECT_EQ(score->get_as<std::string>("text_color"_key, std::string{}), "");
+  EXPECT_EQ(s.ui_objects.count(find_row_path(s, "Score") + ".menu"), 0U);
+}
+
+TEST_F(ObjectInspectorDispatchTest, WithoutADecoratorRowsHaveNoMenuAndClicksResolveToNothing) {
+  auto* oi = find_inspector();
+  ASSERT_NE(oi, nullptr);
+  auto& s = *srv_->last_session;
+  for (auto& [path, elem] : s.ui_objects)
+    EXPECT_EQ(path.find(".menu"), std::string::npos) << path;
+  auto w = find_value_widget("Active");
+  ASSERT_TRUE(w);
+  EXPECT_FALSE(oi->handle_menu_clicked(w->as<bison::key_t>("__wish_id"_key)).has_value());
+}
+
+TEST_F(ObjectInspectorDispatchTest, ClearingTheDecoratorRemovesMenusOnTheNextBuild) {
+  auto* oi = find_inspector();
+  ASSERT_NE(oi, nullptr);
+  auto& s = *srv_->last_session;
+  oi->set_field_decorator([](bison::key_t) {
+    wish::object_inspector::field_decoration d;
+    d.menu = {{"x", "X"}};
+    return d;
+  });
+  oi->set_target(s, target_);
+  const std::string row = find_row_path(s, "Active");
+  ASSERT_EQ(s.ui_objects.count(row + ".menu"), 1U);
+  bison::key_t item_id = s.ui_objects.at(row + ".menu.i0")->as<bison::key_t>("__wish_id"_key);
+
+  oi->set_field_decorator(nullptr);
+  oi->set_target(s, target_);
+  EXPECT_EQ(s.ui_objects.count(find_row_path(s, "Active") + ".menu"), 0U);
+  EXPECT_FALSE(oi->handle_menu_clicked(item_id).has_value()) << "old menu items no longer resolve";
+}

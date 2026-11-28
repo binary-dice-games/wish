@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `ObjectInspector`: `set_field_decorator()` lets the owning app color a
+  field's name, append to its tooltip and add a per-row right-click menu;
+  `handle_menu_clicked()` resolves a menu click to (field, action).
 - `server::set_max_fps()` sets the render rate cap (default 60 fps).
 
 ### Fixed

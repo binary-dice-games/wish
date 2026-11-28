@@ -166,6 +166,7 @@ void object_inspector::release(context& s) {
   value_widgets_.clear();
   angle_widgets_.clear();
   drop_widgets_.clear();
+  menu_widgets_.clear();
 }
 
 context& object_inspector::require_dispatch_session() {
@@ -397,6 +398,34 @@ void object_inspector::set_target(context& s, dynamic_ptr target) {
       auto row_children = dynamic_ptr{key_t{0U}, {}};
       (*row_children)[size_t{0}] = dynamic_ptr{name_label};
       (*row_children)[size_t{1}] = dynamic_ptr{value_widget};
+
+      // The owning app's per-field decoration (set_field_decorator()).
+      if (decorator_) {
+        const field_decoration deco = decorator_(rf.field_key);
+        if (!deco.name_color.empty())
+          name_label["text_color"_key] = deco.name_color;
+        if (!deco.tooltip_note.empty()) {
+          std::string tip = name_label->get_as<std::string>("tooltip"_key, std::string{});
+          name_label["tooltip"_key] = tip.empty() ? deco.tooltip_note : tip + "\n" + deco.tooltip_note;
+        }
+        if (!deco.menu.empty()) {
+          // A TableRow renders one ContextMenu child as the row's own
+          // right-click menu (render_table()).
+          auto menu = stamp(s, "ContextMenu"_key, row_path + ".menu");
+          auto items = dynamic_ptr{key_t{0U}, {}};
+          int32_t mi = 0;
+          for (const auto& [action, label] : deco.menu) {
+            auto item = stamp(s, "MenuItem"_key, row_path + ".menu.i" + std::to_string(mi));
+            item["label"_key] = label;
+            item["order"_key] = mi;
+            menu_widgets_[wish_id_of(item)] = field_menu_action{rf.field_key, action};
+            (*items)[static_cast<size_t>(mi++)] = dynamic_ptr{item};
+          }
+          menu["children"_key] = items;
+          menu->refresh_children_order();
+          (*row_children)[size_t{2}] = dynamic_ptr{menu};
+        }
+      }
       row["children"_key] = row_children;
 
       (*table_children)[idx++] = dynamic_ptr{row};
@@ -483,6 +512,13 @@ std::optional<object_inspector::field_drop> object_inspector::handle_dropped(
   if (it == drop_widgets_.end())
     return std::nullopt;
   return field_drop{it->second, payload.as<std::string>("payload"_key)};
+}
+
+std::optional<object_inspector::field_menu_action> object_inspector::handle_menu_clicked(key_t widget_id) const {
+  auto it = menu_widgets_.find(widget_id);
+  if (it == menu_widgets_.end())
+    return std::nullopt;
+  return it->second;
 }
 
 dynamic object_inspector::do_construct(const dynamic& params) {
